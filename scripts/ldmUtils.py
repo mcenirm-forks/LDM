@@ -157,6 +157,45 @@ def removeOldProdInfoFiles(env):
 
 
 ###############################################################################
+# Check the LDM system.
+###############################################################################
+
+def checkLdm():
+
+    status = 0
+
+    print "Checking for a running LDM system...\n";
+    if (!isRunning($pid_file, $ip_addr)) {
+        errmsg("The LDM server is not running");
+        $status = 2;
+    }
+    else {
+        print "Checking the system clock...\n";
+        if (checkTime()) {
+            $status = 3;
+        }
+        else {
+            print "Checking the most-recent insertion into the queue...\n";
+            if (check_insertion()) {
+                $status = 4;
+            }
+            else {
+                print "Vetting the size of the queue against the maximum ".
+                    "acceptable latency...\n";
+                if (vetQueueSize()) {
+                    $status = 5;
+                }
+                else {
+                    $status = 0;
+                }
+            }
+        }
+    }
+
+    return status;
+
+
+###############################################################################
 # stop the LDM server
 ###############################################################################
 
@@ -168,13 +207,12 @@ def stopLdm(reg, envVar):
     status = isRunning(reg, envVar, True)
 
     if status != 0:
-        errmsg("The LDM server is NOT running or its process-ID is ".
-            "unavailable");
+        print("The LDM server is NOT running or its process-ID is 'unavailable'")
     
     else:
         
         # kill the server and associated processes
-        print("Stopping the LDM server...\n");
+        print("Stopping the LDM server...\n")
         rpc_pid = envVar['pid']
 
         kill_rpc_pid_cmd = f"kill {rpc_pid}"
@@ -191,10 +229,11 @@ def stopLdm(reg, envVar):
             removeOldProdInfoFiles();
 
             # get rid of the pid file
-            unlink($pid_file);
+            pid_filePath = Path(pid_file)
+            pid_filePath.unlink()
         }
 
-    return status;
+    return status
 
 
 
