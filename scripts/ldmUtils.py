@@ -133,18 +133,17 @@ def newLog(reg):
         if status != 0:
             print("new_log(): Couldn't refresh LDM logging");
         else:
-            $status = 0;        # success
+            status = 0;        # success
     
-    return $status;
+    return status;
 
 
 ###############################################################################
 # Remove product-information files that are older than the LDM pid-file.
 ###############################################################################
 
-def removeOldProdInfoFiles(env):
+def removeOldProdInfoFiles(env, pid_file):
 
-    pid_file = env['pid_file']
     mtime = getMTime(pid_file)
     
     for file in glob.glob('.*.info'):
@@ -162,35 +161,32 @@ def removeOldProdInfoFiles(env):
 
 def checkLdm():
 
-    status = 0
+    status   = 0
+    pid_file = env['pid_file']
+    ip_addr  = env['ip_addr']
 
-    print "Checking for a running LDM system...\n";
-    if (!isRunning($pid_file, $ip_addr)) {
-        errmsg("The LDM server is not running");
-        $status = 2;
-    }
-    else {
-        print "Checking the system clock...\n";
-        if (checkTime()) {
-            $status = 3;
-        }
-        else {
-            print "Checking the most-recent insertion into the queue...\n";
-            if (check_insertion()) {
-                $status = 4;
-            }
-            else {
-                print "Vetting the size of the queue against the maximum ".
-                    "acceptable latency...\n";
-                if (vetQueueSize()) {
-                    $status = 5;
-                }
-                else {
-                    $status = 0;
-                }
-            }
-        }
-    }
+    print("Checking for a running LDM system...\n")
+    if not isRunning(pid_file, ip_addr):
+        print("The LDM server is not running")
+        status = 2
+    
+    else:
+        print("Checking the system clock...\n")
+        if checkTime():
+            status = 3
+        
+        else:
+            print("Checking the most-recent insertion into the queue...\n")
+            if check_insertion():
+                status = 4
+            
+            else:
+                print("Vetting the size of the queue against the maximum acceptable latency...\n")
+                if vetQueueSize():
+                    status = 5
+                
+                else:
+                    status = 0
 
     return status;
 
@@ -220,18 +216,18 @@ def stopLdm(reg, envVar):
         os.system( kill_rpc_pid_cmd );
 
         # we may need to sleep to make sure that the port is deregistered
-        while isRunning(reg, envVarDict, True) == 0: 
+        while isRunning(reg, envVar, True) == 0: 
             time.sleep(1);
         
-
-        if (0 == status) {
+        pid_file     = envVar['pid_file']
+        pid_filePath = Path(pid_file)
+        if 0 == status:
             # remove product-information files that are older than the LDM pid-file.
-            removeOldProdInfoFiles();
+            removeOldProdInfoFiles(envVar, pid_file)
 
             # get rid of the pid file
-            pid_filePath = Path(pid_file)
+            print(f"\n\tUnlinking pid file: {pid_filePath}\n")
             pid_filePath.unlink()
-        }
 
     return status
 
