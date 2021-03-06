@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+#
 #
 # Description: This Python module provides support to parse the user's
 # entered ldmadmin commands on the command line
@@ -25,9 +27,9 @@ import os
 import argparse
 
 
-class LDMadminData:
-    ldmPQDefaultPath='LDM Default: $LDM_HOME/ldm/var/queues/ldm.pq'
-    ldmPQSurfDefaultPath='pqsurf(1) default: $LDM_HOME/ldm/var/queues/pqsurf.pq'
+class CLIParser:
+    ldmPQDefaultPath='LDM Default: $LDMHOME/ldm/var/queues/ldm.pq'
+    ldmPQSurfDefaultPath='pqsurf(1) default: $LDMHOME/ldm/var/queues/pqsurf.pq'
 
     ldmCommandsDict={
     	"start": ["[-v] [-x] [-m maxLatency] [-o offset] [-q q_path] [-M max_clients] [conf_file]",	"Starts the LDM"],
@@ -66,10 +68,9 @@ class LDMadminData:
         # commands and their options
         
         self.ldmShortCmdsList       = []
-        self.ldmCmdsOptionsList     = []
+        
         for cmd, optionList in self.ldmCommandsDict.items():
             self.ldmShortCmdsList.append(cmd)
-            self.ldmCmdsOptionsList.append(optionList[0])       # <==== not used for now
 
         self.cliParser = argparse.ArgumentParser(
             prog='ldmadmin',
@@ -87,14 +88,20 @@ class LDMadminData:
         return self.ldmCommandsDict
 
 
+    def prettyPrintCommandsDict(self):
+        print(f"\n--> LDM Commands:\n")
+        for k, v in self.ldmCommandsDict.items():
+            print(f"\t{k} \t{v}")
+
+
     def getCmdsList(self):
         return self.ldmShortCmdsList
 
-    def getCmdsOptionsList(self):
-        return self.ldmCmdsOptionsList
 
-    def getExtraOptionsList(self):
-        return self.ldmExtraOptionsList
+    def isLockingRequired(self, cmd):
+        if cmd in self.lockRequiringCmds:
+            return True
+        return False
 
     def cliParserAddArguments(self, cmd):
 
@@ -105,39 +112,35 @@ class LDMadminData:
             self.cliParser.add_argument('-x',               action='store_true',                    help='debug', required=False)
             self.cliParser.add_argument('-m maxLatency',    action="store", dest='m',   type=int,   help='Maximum latency', metavar='', required=False)
             self.cliParser.add_argument('-o offset',        action="store", dest='o',   type=int,   help='', metavar='', required=False)
-            #self.cliParser.add_argument('-q q_path',        action="store", dest='q',   type=str,   default='$LDM_HOME/ldm/var/queues/ldm.pq', help='', metavar='')
-            self.cliParser.add_argument('-q q_path',        action="store", dest='q',   type=str,   default=os.getcwd() + '/../var/queues/ldm.pq', help='', metavar='', required=False)
+            self.cliParser.add_argument('-q q_path',        action="store", dest='q',   type=str,   default=os.path.expandvars('$LDMHOME/var/queues/ldm.pq'), help='', metavar='', required=False)
             self.cliParser.add_argument('-M max_clients',   action="store", dest='M',   type=int,   help='', metavar='', required=False)
-            # self.cliParser.add_argument('conf_file',        nargs='*',                  type=str,   default='$LDM_HOME/ldm/etc/ldmd.conf', help='', metavar='')
-            
-            self.cliParser.add_argument('conf_file',        nargs='?',                type=None,   default=os.getcwd() + '/../etc/ldmd.conf', help='', metavar='')
+            self.cliParser.add_argument('conf_file',        nargs='?',                type=None,   default=os.path.expandvars('$LDMHOME/etc/ldmd.conf'), help='', metavar='')
     
-
         if cmd == "mkqueue":
             self.cliParser.add_argument('-v',       action='store_true',            help='verbose', required=False)
             self.cliParser.add_argument('-x',       action='store_true',            help='debug', required=False)
             self.cliParser.add_argument('-c',       action='store_true',            help='', required=False)
             self.cliParser.add_argument('-f',       action='store_true',            help='', required=False)
-            self.cliParser.add_argument('-q q_path', action="store", dest='q',      type=str,   default='$LDM_HOME/ldm/var/queues/ldm.pq', help='', metavar='', required=False)
+            self.cliParser.add_argument('-q q_path', action="store", dest='q',      type=str,   default=os.path.expandvars('$LDMHOME/var/queues/ldm.pq'), help='', metavar='', required=False)
         
         #(key ,val) = self.cliParser.parse_known_args()
 
         if cmd == "delqueue":
-            self.cliParser.add_argument('-q q_path', action="store", dest='q',      type=str,   default='$LDM_HOME/ldm/var/queues/ldm.pq', help='', metavar='', required=False)
+            self.cliParser.add_argument('-q q_path', action="store", dest='q',      type=str,   default=os.path.expandvars('$LDMHOME/var/queues/ldm.pq'), help='', metavar='', required=False)
 
         if cmd == "mksurfqueue":
             self.cliParser.add_argument('-v',       action='store_true',            help='verbose', required=False)
             self.cliParser.add_argument('-x',       action='store_true',            help='debug', required=False)
             self.cliParser.add_argument('-c',       action='store_true',            help='', required=False)
             self.cliParser.add_argument('-f',       action='store_true',            help='', required=False)
-            self.cliParser.add_argument('-q q_path', action="store", dest='q',      type=str, default='$LDM_HOME/ldm/var/queues/pqsurf.pq', help='', metavar='', required=False)
+            self.cliParser.add_argument('-q q_path', action="store", dest='q',      type=str, default=os.path.expandvars('$LDMHOME/var/queues/pqsurf.pq'), help='', metavar='', required=False)
 
         if cmd == "delsurfqueue":
-            self.cliParser.add_argument('-q q_path', action="store", dest='q',      type=str, default='$LDM_HOME/ldm/var/queues/pqsurf.pq', help='', metavar='', required=False)
+            self.cliParser.add_argument('-q q_path', action="store", dest='q',      type=str, default=os.path.expandvars('$LDMHOME/var/queues/pqsurf.pq'), help='', metavar='', required=False)
 
         if cmd == "newlog":
             self.cliParser.add_argument('-n numlogs', action="store", dest='n',     default=7, type=int,    help='', metavar='', required=False)
-            self.cliParser.add_argument('-l logfile', action="store", dest='l',     type=str, default='$LDM_HOME/ldm/var/logs/ldmd.log', help='', metavar='', required=False)     
+            self.cliParser.add_argument('-l logfile', action="store", dest='l',     type=str, default=os.path.expandvars('$LDMHOME/var/logs/ldmd.log'), help='', metavar='', required=False)     
 
         if cmd == "pqactcheck":
             self.cliParser.add_argument('-p pqact_conf', action="store", dest='p',  type=str,   help='', metavar='', required=False)
@@ -192,11 +195,9 @@ class LDMadminData:
                 fullCommand += f"-{key} {val} "
         
         if add_v == 0 and add_x == 1:
-            # option -x goes along with -v
+            # option -x goes along with -v, add -v
             fullCommand += f"-v"
             
-
-
         return fullCommand
 
 
@@ -250,18 +251,18 @@ options:
     -f              Create queue "fast"
     -f feedset      Feed-set to use with command. Default: ANY
     -p pattern
-    -l logfile      Pathname of logfile. Default: $LDM_HOME/ldm/var/logs/ldmd.log
+    -l logfile      Pathname of logfile. Default: $LDMHOME/ldm/var/logs/ldmd.log
     -m maxLatency   Conditional data-request temporal-offset
     -M max_clients  Maximum number of active clients
     -n numlogs      Number of logs to rotate. Default: 7
     -o offset       Unconditional data-request temporal-offset
-    -q q_path       Specify a product-queue path. LDM Default: $LDM_HOME/ldm/var/queues/ldm.pq,
-                    pqsurf(1) default: $LDM_HOME/ldm/var/queues/pqsurf.pq
+    -q q_path       Specify a product-queue path. LDM Default: $LDMHOME/ldm/var/queues/ldm.pq,
+                    pqsurf(1) default: $LDMHOME/ldm/var/queues/pqsurf.pq
     -v              Turn on verbose mode
     -x              Turn on debug mode (includes verbose mode)
 
 conf_file:
-    LDM configuration file to use. Default: $LDM_HOME/ldm/etc/ldmd.conf
+    LDM configuration file to use. Default: $LDMHOME/ldm/etc/ldmd.conf
 
 
     '''

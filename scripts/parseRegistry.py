@@ -27,7 +27,6 @@
 from xml.dom.minidom import parse
 import xml.dom.minidom
 
-
 class RegistryParser:
 
     registryEntries = {
@@ -37,12 +36,12 @@ class RegistryParser:
         "reconMode":                    {"reconciliation-mode": 0},
         "hostname":                     {"hostname": 0},
         # check-time
-        "check_time":                   {"enabled": 0},   
+        "check_time_enabled":           {"enabled": 0},   
         "check_time_limit":             {"limit": 0},  
         "warn_if_check_time_disabled":  {"warn-if-disabled": 0},  
         # ntp
-        "command":                      {"command": 0}, 
-        "time_servers":                 {"servers": 0}, # @time_servers = split(/\s+/, $time_servers);
+        "ntpdate_command":              {"command": 0}, 
+        "ntpdate_servers":              {"servers": 0}, # @time_servers = split(/\s+/, $time_servers);
         "ntpdate_timeout":              {"timeout": 0}, 
         # log
         "num_logs":                     {"count": 0},
@@ -70,7 +69,7 @@ class RegistryParser:
         "max_clients":                  {"max-clients": 0},
         "max_latency":                  {"max-latency": 0},
         "port":                         {"port": 0},
-        "offset":                       {"time-offset": 0}
+        "server_time_offset":           {"time-offset": 0}
     }
 
 
@@ -98,7 +97,7 @@ class RegistryParser:
                 self.registryEntries[entry] = expandedSize
 
             # 2.
-            if entry == "time_servers" :
+            if entry == "ntpdate_servers" :
                 self.registryEntries[entry]= self.registryEntries[entry].split()
 
         # 3.
@@ -139,3 +138,9 @@ class RegistryParser:
 
     def getRegistryEntries(self):
         return self.registryEntries
+
+
+    def prettyPrintRegistry(self):
+        print(f"\n--> Registry items:\n")
+        for k, v in self.registryEntries.items():
+            print(f"\t{k} \t{v}")

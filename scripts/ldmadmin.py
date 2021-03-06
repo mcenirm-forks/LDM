@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+###############################################################################
 #
 #
 # Description: This Python script provides a command line interface to LDM
@@ -34,6 +35,7 @@
 #
 ###############################################################################
 
+
 from os import system
 import sys
 import readline
@@ -42,9 +44,9 @@ from signal import signal, SIGINT
 from sys 	import exit
 from time 	import sleep
 
-import parseCLI 		as ldmCmds
-import parseRegistry 	as regPath
-import environHandler
+import parseCLI 		as parseCli
+import parseRegistry 	as parseReg
+import environHandler	as envHdler
 
 EXIT_MESSAGE='\n\tThank you for using ldmadmin...\n\n'
 
@@ -60,10 +62,10 @@ def exitMessage():
 
 
 class LDMCommandsHandler:
-	def __init__(self, ldmCommandsDict):
-		self.ldmCommandsDict	= ldmCommandsDict
+	def __init__(self, cmdsDico):
+		self.cmdsDico	= cmdsDico
 		self.ldmShortCmdsList	= []
-		for cmd, optionList in ldmCommandsDict.items():
+		for cmd, optionList in cmdsDico.items():
 			self.ldmShortCmdsList.append(cmd)
 	        
 	def complete(self,userInput,state):
@@ -74,13 +76,29 @@ class LDMCommandsHandler:
 		return cmd in self.ldmShortCmdsList
 
 	def returnCmdCortege(self, cmd):
-		return self.ldmCommandsDict[cmd][0]
+		return self.cmdsDico[cmd][0]
 
-	def execute(self, cmdToExecute):
+	def displayRegistryAndEnv(self, registryEntries, envVariables):
+		print(f"\n\t====> Registry XML: \n {registryEntries} \n")
+		print(f"\n\t====> Environment variables: \n {envVariables} \n")
+
+
+	def execute(self, cmdToExecute, toLockOrNot, evnt):
 		status = 0
-		print(f"\n\tExecuting {cmdToExecute}\n")
 		
-		#nstatus = os.system(cmdToExecute)
+		if toLockOrNot == True:
+			if evnt.getLock() == -1:
+				print(f"Could not get lock for '{cmdToExecute}' to execute properly!")
+				status = -1
+				return status
+
+			print(f"\n\tExecuting in Locked Mode : {cmdToExecute}\n")
+			evnt.releaseLock()
+
+		else:
+			
+			print(f"\n\tExecuting in NON Locked Mode : {cmdToExecute}\n")
+			status = os.system(cmdToExecute)
 
 		return status
 
@@ -88,23 +106,21 @@ class LDMCommandsHandler:
 def main():
 	signal(SIGINT, bye)
 	system('clear')
+	debug = False
 
-	regParserInstance = regPath.RegistryParser()
-
-	registryEntries = regParserInstance.getRegistryEntries()
-#	print(f"\n\t====> Registry XML: \n {registryEntries} \n")
-
-	envHandlerInstance = environHandler.LDMenvironmentHandler()
-
-	envVariables = envHandlerInstance.getEnvVarsDict()
-#	print(f"\n\t====> Environment variables: \n {envVariables} \n")
+	registryEntries = parseReg.RegistryParser().getRegistryEntries()
+	evnt = envHdler.LDMenvironmentHandler()
 
 
 	# tab completion:
 	readline.parse_and_bind("tab: complete")
-	dataInstance = ldmCmds.LDMadminData()
-	ldmCommandsDict = dataInstance.getFullCommandsDict()
-	LDMcommands = LDMCommandsHandler( ldmCommandsDict )
+	cliInst 		= parseCli.CLIParser()				# instance of CLIParser
+	cmdsDico 		= cliInst.getFullCommandsDict()
+	LDMcommands 	= LDMCommandsHandler( cmdsDico )	# instance of 'this'
+	
+	if debug:
+		LDMcommands.displayRegistryAndEnv(registryEntries, evnt.getEnvVarsDict())
+
 	readline.set_completer(LDMcommands.complete)
 
 	nbArguments=len(sys.argv)
@@ -112,31 +128,36 @@ def main():
 		nbArguments == 2 and (sys.argv[1] == "-h" or sys.argv[1] == "--help"):
 
 # Interactive mode
-		dataInstance.usage()
-		print(f"\n\tInteractive mode (type 'quit' to exit)\n")
+		cliInst.usage()
+		print(f"\n\tInteractive mode (type 'quit' to exit). Not implemented yet.\n")
 	
+
 	else:
+
+
 # Non-interactive mode (CLI mode)
 		cmd=sys.argv[1]
+		lockOrNotFlag 	= cliInst.isLockingRequired(cmd)
+		
 		if not LDMcommands.isValidCmd(cmd):
 			print(f"\n\tInvalid ldmadmin command: {cmd}\n")
 			sleep(3)
-			dataInstance.usage()
+			cliInst.usage()
 			exitMessage()
 
 		# Here, cmd is a valid ldmadmin command:
 		if cmd == "usage": 
-			dataInstance.usage()
+			cliInst.usage()
 
 		
-		if  nbArguments == 2: # command w/o options
-			status = LDMcommands.execute(sys.argv[1])
-		else:	
-			cliDico = dataInstance.cliParserAddArguments(cmd)
-			print(f"\n\nCLI dict: {cliDico}\n")
+		# if  nbArguments == 2: # command w/o options
+		# 	status 			= LDMcommands.execute(cmd, lockOrNotFlag, evnt)
+		# else:	
+		cliDico 		= cliInst.cliParserAddArguments(cmd)
+		print(f"\n\nCLI dict: {cliDico}\n")
 
-			cliString = dataInstance.buildCLIcommand(cmd, cliDico)
-			status = LDMcommands.execute(cliString)
+		cliString 		= cliInst.buildCLIcommand(cmd, cliDico)
+		status 			= LDMcommands.execute(cliString, lockOrNotFlag, evnt)
 
 
 
@@ -146,35 +167,36 @@ def main():
 		exitMessage()
 
 # Interactive mode
-	cmd = input('ldmadmin> ')
-	while not cmd == "quit":
-		
-		cmd=cmd.strip()
-		if cmd == "usage": 
-			dataInstance.usage()
-
-
-		if cmd == "quit":
-			exitMessage()
-
-		if not LDMcommands.isValidCmd(cmd):
-			print(f"Invalid ldmadmin command: {cmd}\n")
-			cmd = input('ldmadmin> ')
-			continue
-
-		# Here, cmd is a valid ldmadmin command:
-		print(f"{cmd} ---> {LDMcommands.returnCmdCortege(cmd)}")
-
-		# namespace = dataInstance.cliParserAddArguments(cmd)
-		# #print(f"\n\tnamespace: {namespace}\n")
-
-		# cliString = dataInstance.buildCLIcommand(cmd, namespace)
-		# status = LDMcommands.execute(cliString)
-
-
-
-		# last line:
+	if None:
 		cmd = input('ldmadmin> ')
+		while not cmd == "quit":
+			
+			cmd=cmd.strip()
+			if cmd == "usage": 
+				cliInst.usage()
+
+
+			if cmd == "quit":
+				exitMessage()
+
+			if not LDMcommands.isValidCmd(cmd):
+				print(f"Invalid ldmadmin command: {cmd}\n")
+				cmd = input('ldmadmin> ')
+				continue
+
+			# Here, cmd is a valid ldmadmin command:
+			print(f"{cmd} ---> {LDMcommands.returnCmdCortege(cmd)}")
+
+			# namespace = cliInst.cliParserAddArguments(cmd)
+			# #print(f"\n\tnamespace: {namespace}\n")
+
+			# cliString = cliInst.buildCLIcommand(cmd, namespace)
+			# status = LDMcommands.execute(cmd, cliString, evnt)
+
+
+
+			# last line:
+			cmd = input('ldmadmin> ')
 
 
 	exitMessage()
