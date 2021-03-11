@@ -118,10 +118,17 @@ def main():
 	cmdsDico 		= cliInst.getFullCommandsDict()
 	LDMcommands 	= LDMCommandsHandler( cmdsDico )	# instance of 'this'
 	
+
+	checkTime(cmdsDico)
+
+	exit(0)
+
 	if debug:
 		LDMcommands.displayRegistryAndEnv(registryEntries, evnt.getEnvVarsDict())
 
 	readline.set_completer(LDMcommands.complete)
+
+
 
 	nbArguments=len(sys.argv)
 	if nbArguments == 1 or \

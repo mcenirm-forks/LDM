@@ -69,7 +69,11 @@ class RegistryParser:
         "max_clients":                  {"max-clients": 0},
         "max_latency":                  {"max-latency": 0},
         "port":                         {"port": 0},
-        "server_time_offset":           {"time-offset": 0}
+        "server_time_offset":           {"time-offset": 0},
+        # fmtp
+        "oess_pathname":                {"oess-pathname": 0},
+        "fmtp_retx_timeout":            {"fmtp-retx-timeout": 0}
+
     }
 
 
@@ -100,7 +104,10 @@ class RegistryParser:
             if entry == "ntpdate_servers" :
                 self.registryEntries[entry]= self.registryEntries[entry].split()
 
-        # 3.
+        # 3. Convert all numeral strings to numbers:
+        self.stringToNum()
+
+        # 4.
         # Check the hostname for a fully-qualified version.
         #     # More validation may be required
         if self.registryEntries['hostname'].startswith("."):
@@ -110,6 +117,23 @@ class RegistryParser:
                 \n\tto set the fully-qualified name of the host."
             print(errmsg)
             exit(0);
+
+    def stringToNum(self):
+
+            self.registryEntries["delete_info_files"] *= 1
+            self.registryEntries["insertion_check_period"] *= 1
+            self.registryEntries["check_time_enabled"] *= 1
+            self.registryEntries["check_time_limit"] *= 1
+            self.registryEntries["warn_if_check_time_disabled"] *= 1
+            self.registryEntries["ntpdate_timeout"] *= 1            
+            self.registryEntries["num_logs"] *= 1
+            self.registryEntries["log_rotate"] *= 1
+            self.registryEntries["num_metrics"] *= 1
+            self.registryEntries["max_clients"] *= 1
+            self.registryEntries["max_latency"] *= 1
+            self.registryEntries["port"] *= 1
+            self.registryEntries["server_time_offset"] *= 1
+            self.registryEntries["fmtp_retx_timeout"] *= 1
 
 
     # More validation may be required
