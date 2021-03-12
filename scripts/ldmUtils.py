@@ -65,9 +65,324 @@ def ldmConfig(reg, env):
     # environment vars    
     print(f"PID file:              { env['pid_file'] }")
     print(f"Lock file:             { env['lock_file'] }")
+        
+    print("\n")
+
+
+
+###############################################################################
+# Check the size of the queue.
+###############################################################################
+
+
+def grow(pq_path, newQueuePath): 
+{
+    my $oldQueuePath = $_[0];
+    my $newQueuePath = $_[1];
+    my $status = 1;                     # failure default;
+
+    print "Copying products from old queue to new queue...\n";
+    if (system("pqcopy $oldQueuePath $newQueuePath")) {
+        errmsg("grow(): Couldn't copy products");
+    }
+    else {
+        print "Renaming old queue\n";
+        if (system("mv -f $oldQueuePath $oldQueuePath.old")) {
+            errmsg("grow(): Couldn't rename old queue");
+        }
+        else {
+            print "Renaming new queue\n";
+            if (system("mv $newQueuePath $oldQueuePath")) {
+                errmsg("grow(): Couldn't rename new queue");
+            }
+            else {
+                print "Deleting old queue\n";
+                if (unlink($oldQueuePath.".old") != 1) {
+                    errmsg("grow(): Couldn't delete old queue");
+                }
+                else {
+                    $status = 0;        # success
+                }
+            }                           # new queue renamed
+
+            if ($status) {
+                print "Restoring old queue\n";
+                if (system("mv -f $oldQueuePath.old $oldQueuePath")) {
+                    errmsg("grow(): Couldn't restore old queue");
+                }
+            }
+        }                               # old queue renamed
+    }                                   # products copied
+
+    return $status;
+}
+
+
+
+def saveQueuePar(newByteCount, newSlotCount):
+{
+    my $size = $_[0];
+    my $slots = $_[1];
+    my $status = 1;                     # failure default
+
+    if (system("regutil -u $size regpath{QUEUE_SIZE}")) {
+        errmsg("saveQueuePar(): Couldn't save new queue size");
+    }
+    else {
+        if (system("regutil -u $slots regpath{QUEUE_SLOTS}")) {
+            errmsg("saveQueuePar(): Couldn't save queue slots");
+
+            print "Restoring previous queue size\n";
+            if (system("regutil -s $pq_size regpath{QUEUE_SIZE}")) {
+                errmsg("saveQueuePar(): Couldn't restore previous queue size");
+            }
+        }
+        else {
+            $pq_size = $size;
+            $pq_slots = $slots;
+            $status = 0;                # success
+        }
+    }
+
+    return $status;
+}
+
+
+
+def saveTimePar(newTimeOffset, newMaxLatency):
+
+    status = 1                     # failure default
+
+    regutil_cmd = f"regutil -u {newTimeOffset} regpath" + "{TIME_OFFSET}"
+    if system(regutil_cmd):
+        print("saveTimePar(): Couldn't save new time-offset")
+    else:
+        regutil_cmd = f"regutil -u {newMaxLatency} regpath" + "{MAX_LATENCY}"
+        if system(regutil_cmd):
+            print("saveTimePar(): Couldn't save new maximum acceptable latency")
+
+            print("Restoring previous time-offset\n")
+            regutil_cmd = f"regutil -u {offset} regpath" + "{TIME_OFFSET}"
+            if system(regutil_cmd):
+                print("saveTimePar(): Couldn't restore previous time-offset")
+            
+        else:
+            offset = newTimeOffset      # WHY these 2 assigments???
+            max_latency = newMaxLatency # WHY these 2 assigments???
+
+            status = 0                # success
+
+    return status
+
+
+
+# Returns new size parameters for the product-queue
+#
+# Arguments:
+#       minVirtResTime          The minimum virtual residence time in seconds.
+#       oldestProductAge        The age of the oldest product in the queue in
+#                               seconds.
+#       mvrtSize                The amount of space used in the queue for data
+#                               in bytes.
+#       mvrtSlots               The number of slots used in the queue for 
+#                               products.
+# Returns:
+#       [0]                     The new size for the queue in bytes.
+#       [1]                     The new number of slots for the queue.
+
+def computeNewQueueSize(minVirtResTime, oldestProductAge, mvrtSize, mvrtSlots):
+{
+    if 0 >= minVirtResTime:
+        # Use age of oldest product, instead
+        minVirtResTime = oldestProductAge
     
+    newByteCount=0
+    newSlotCount=0
+    if 0 < minVirtResTime:
+        ratio = max_latency / minVirtResTime
+        newByteCount = int(ratio * mvrtSize)
+        newSlotCount = int(ratio * mvrtSlots)
     
-    print(f"\n")
+    else:
+        # Insufficient data
+        newByteCount = mvrtSize   # Don't change
+        newSlotCount = mvrtSlots  # Don't change
+    }
+
+    return newByteCount, newSlotCount
+
+
+# Helper function
+def _increaseQueue(reg, envVar, pqMonValues):
+
+    ageOldest       = pqMonValues[1] 
+    minVirtResTime  = pqMonValues[2] 
+    mvrtSize        = pqMonValues[3] 
+    mvrtSlots       = pqMonValues[4] 
+
+    newParams = computeNewQueueSize(minVirtResTime, ageOldest, mvrtSize, mvrtSlots)
+    newByteCount = newParams[0]
+    newSlotCount = newParams[1]
+    pq_path      = reg["pq_path"]
+    newQueuePath = f"{pq_path}.new"
+
+    print(f"\nvetQueueSize(): Increasing the capacity of the \
+            \nqueue to {newByteCount} bytes and {newSlotCount} slots...");
+
+    pqcreate_cmd = f"pqcreate -c -S {newSlotCount} -s {newByteCount} -q {newQueuePath}"
+    if system(pqcreate_cmd):
+        print(f"vetQueueSize(): Couldn't create new queue: {newQueuePath}")
+        status = 2            # major failure
+        return status
+    
+
+    restartNeeded=0
+    status = 0            # success so far
+
+    if isRunning(reg, envVar): 
+        if stop_ldm(): 
+            status = 2        # major failure
+            return status
+        else:
+            restartNeeded = 1
+        
+    
+    # success so far
+    # LDM is stopped
+    if grow(pq_path, newQueuePath): 
+        status = 2        # major failure
+        return status
+    
+    print("Saving new queue parameters...\n")
+    if saveQueuePar(newByteCount, newSlotCount):
+        status = 2    # major failure
+        return status
+        
+    
+    # success so far
+    # restart needed
+    if restartNeeded: 
+        print "Restarting the LDM...\n";
+        if start_ldm():
+            print("vetQueueSize(): Couldn't restart the LDM")
+            status = 2    # major failure
+            return status
+        
+    # LDM stopped
+    # new queue created
+
+    # reset queue metrics
+    # mode is increase queue
+    system("pqutil -C")  
+    return status
+
+# Helper function    
+def _decreaseQueue():
+    
+    #2. recon == decrease  
+    
+    if 0 >= minVirtResTime:
+        # Use age of oldest product, instead
+        minVirtResTime = ageOldest
+    
+    # if 0 >= ageOldest then minVirtResTime = 1
+    if 0 >= $minVirtResTime:
+        minVirtResTime = 1 
+    
+    newMaxLatency = minVirtResTime
+    newTimeOffset = newMaxLatency
+
+    print(f"vetQueueSize(): Decreasing the maximum acceptable \
+        \nlatency and the time-offset of requests (registry \
+        \nparameters 'regpath" + "{MAX_LATENCY}" + "' and \
+        \n'regpath" + "{TIME_OFFSET}" + "') to {newTimeOffset} seconds...")
+
+
+    print("Saving new time parameters...\n")
+    if saveTimePar(newTimeOffset, newMaxLatency):
+        status = 2    # major failure
+        return status
+    
+
+    # new time parameters saved
+    if !isRunning(reg, envVar):
+        status = 0    # success : LDM is not running
+    
+    else: # LDM is running
+    
+        print("Restarting the LDM...\n")
+        if stop_ldm():
+            print("vetQueueSize(): Couldn't stop LDM")
+            status = 2        # major failure
+            return status
+        
+        # LDM stopped
+        if start_ldm():
+            print("vetQueueSize(): Couldn't start LDM")
+            status = 2    # major failure
+            return status
+        
+        status = 0     # success
+        
+        # LDM stopped
+    # LDM is running
+
+    # new time parameters saved
+
+    # reset queue metrics
+    system("pqutil -C") 
+    
+    return status
+
+
+# Helper function
+def _doNothing(pqMonValues):
+
+    ageOldest       = pqMonValues[1] 
+    minVirtResTime  = pqMonValues[2] 
+    mvrtSize        = pqMonValues[3] 
+    mvrtSlots       = pqMonValues[4] 
+
+    newParams = computeNewQueueSize(minVirtResTime, ageOldest, mvrtSize, mvrtSlots)
+    newByteCount = newParams[0]
+    newSlotCount = newParams[1]
+    
+    error_msg = f"vetQueueSize(): The queue should be {newByteCount} \
+        bytes in size with {newSlotCount} slots or the \
+        maximum-latency parameter should be decreased to \
+        {minVirtResTime} seconds. You should set \
+        registry-parameter 'regpath" + "{RECONCILIATION_MODE}" + " \
+        to 'increase queue' or 'decrease max latency' or \
+        manually adjust the relevant registry parameters and recreate the queue."
+    print(error_msg)
+    status = 1        # small queue or big max-latency
+    return status
+
+
+# Helper function
+def _getMTime(aPath):
+    mtime = Path(aPath).stat().st_mtime
+
+    print(f"\tCurrent mtime: \t{CommonFileSystem.convertEpochToHumanDate(mtime)} - ({int(mtime)}) for {aPath}")
+    
+    return int(mtime)
+
+
+# Returns the elapsed time since the LDM server was started, in seconds.
+#
+# Returns:
+#       -1      The LDM system isn't running.
+#       else    The elapsed time since the LDM server was started, in seconds.
+#
+def getElapsedTimeOfServer(reg, envVar):
+
+    if isRunning(reg, envVar, True):
+        pid_file    = envVar["pid_file"] 
+        pid_time = _getMTime(pid_file)
+        return time.time() - pid_time
+
+    print("getElapsedTimeOfServer: LDM is NOT running!...")
+    return -1
 
 
 
@@ -76,347 +391,82 @@ def ldmConfig(reg, env):
 #       1       The queue is too small or the maximum-latency parameter is
 #               too large.
 #       2       Major failure.
-# sub vetQueueSize
-# {
-#     my $status = 2;                     # default major failure
-#     my $etime = getElapsedTimeOfServer();
+#
+def vetQueueSize(reg, envVar):
 
-#     if ($etime < $max_latency) {
-#         $status = 0;                    # too soon to tell
-#     }
-#     else {
-#         chomp(my $line = `pqmon -S -q $pq_path`);
+    status      = 2          # default major failure
+    pid_file    = envVar["pid_file"] 
+    ip_addr     = reg["ip_addr"]
+    max_latency = int(reg["max_latency"])
+    etime       = getElapsedTimeOfServer(reg, envVar)
 
-#         if ($?) {
-#             errmsg("vetQueueSize(): pqmon(1) failure");
-#             $status = 2;                # major failure
-#         }
-#         else {
-#             my @params = split(/\s+/, $line);
-#             my $isFull = $params[0];
-#             my $ageOldest = $params[7];
-#             my $minVirtResTime = $params[9];
-#             my $mvrtSize = $params[10];
-#             my $mvrtSlots = $params[11];
+    if etime < max_latency:
+        status = 0                    # too soon to tell
+        return status
+    
+    pq_path = reg["pq_path"]
+    status, pq_line = _executePqMon(pq_path)
+    if status == -1:
+        print("vetQueueSize(): pqmon(1) failure")
+        status = 2
+        return status
 
-#             if (!$isFull || $minVirtResTime < 0 
-#                     || $minVirtResTime >= $max_latency
-#                     || $mvrtSize <= 0 || $mvrtSlots <= 0) {
-#                 $status = 0;            # reconciliation not yet needed
-#             }
-#             else {
-#                 my $increaseQueue = "increase queue";
-#                 my $decreaseMaxLatency = "decrease maximum latency";
-#                 my $doNothing = "do nothing";
+    print(f"pqmon: {pq_line}")
 
-#                 errmsg("vetQueueSize(): The maximum acceptable latency ".
-#                     "(registry parameter \"regpath{MAX_LATENCY}\": ".
-#                     "$max_latency seconds) is greater ".
-#                     "than the observed minimum virtual residence time of ".
-#                     "data-products in the queue ($minVirtResTime seconds).  ".
-#                     "This will hinder detection of duplicate data-products.");
+    isFull          = int(pq_line.split()[0])
+    ageOldest       = int(pq_line.split()[7])
+    minVirtResTime  = int(pq_line.split()[9])
+    mvrtSize        = int(pq_line.split()[10])
+    mvrtSlots       = int(pq_line.split()[11])
 
-#                 print "The value of the ".
-#                     "\"regpath{RECONCILIATION_MODE}\" registry-parameter is ".
-#                     "\"$reconMode\"\n";
+    pqMonElements = [isFull, ageOldest, minVirtResTime, mvrtSize, mvrtSlots]
 
-#                 if ($reconMode eq $increaseQueue) {
-#                     my @newParams = computeNewQueueSize($minVirtResTime, 
-#                             $ageOldest, $mvrtSize, $mvrtSlots);
-#                     my $newByteCount = $newParams[0];
-#                     my $newSlotCount = $newParams[1];
-#                     my $newQueuePath = "$pq_path.new";
+    print(f"isFull: {isFull} , ageOldest: {ageOldest} , \
+        minVirtResTime: {minVirtResTime} , \
+        mvrtSize: {mvrtSize} , \
+        mvrtSlots: {mvrtSlots}")
 
-#                     errmsg("vetQueueSize(): Increasing the capacity of the ".
-#                             "queue to $newByteCount bytes and $newSlotCount ".
-#                             "slots...");
+    # A- No reconciliation needed
+    ##############################
+    
+    if isFull == 0 or minVirtResTime < 0 or minVirtResTime >= max_latency or mvrtSize <= 0 or mvrtSlots <= 0:
+        status = 0
+        return status
 
-#                     if (system("pqcreate -c -S $newSlotCount -s $newByteCount ".
-#                             "-q $newQueuePath")) {
-#                         errmsg("vetQueueSize(): Couldn't create new queue: ".
-#                             "$newQueuePath");
-#                         $status = 2;            # major failure
-#                     }
-#                     else {
-#                         my $restartNeeded;
 
-#                         $status = 0;            # success so far
+    # B- Reconciliation needed
+    ##########################
 
-#                         if (!isRunning($pid_file, $ip_addr)) {
-#                             $restartNeeded = 0;
-#                         }
-#                         else {
-#                             if (stop_ldm()) {
-#                                 $status = 2;        # major failure
-#                             }
-#                             else {
-#                                 $restartNeeded = 1;
-#                             }
-#                         }
-#                         if (0 == $status) {
-#                             if (grow($pq_path, $newQueuePath)) {
-#                                 $status = 2;        # major failure
-#                             }
-#                             else {
-#                                 print "Saving new queue parameters...\n";
-#                                 if (saveQueuePar($newByteCount,
-#                                             $newSlotCount)) {
-#                                     $status = 2;    # major failure
-#                                 }
-#                             }
+    increaseQueue       = "increase queue"
+    decreaseMaxLatency  = "decrease maximum latency"
+    doNothing           = "do nothing"
 
-#                             if ($restartNeeded) {
-#                                 print "Restarting the LDM...\n";
-#                                 if (start_ldm()) {
-#                                     errmsg("vetQueueSize(): ".
-#                                         "Couldn't restart the LDM");
-#                                     $status = 2;    # major failure
-#                                 }
-#                             }
-#                         }               # LDM stopped
-#                     }                   # new queue created
+    max_latency         = reg["max_latency"]
+    reconMode           = reg["reconMode"]
+    
+    error_msg = f"vetQueueSize(): The maximum acceptable latency \
+        (registry parameter regpath" + "{MAX_LATENCY}" + ": {max_latency} seconds) is greater \
+        than the observed minimum virtual residence time of \
+        data-products in the queue ({minVirtResTime} seconds).  \
+        This will hinder detection of duplicate data-products."
+    print(error_msg)
 
-#                     system("pqutil -C");# reset queue metrics
-#                 }                       # mode is increase queue
-#                 elsif ($reconMode eq $decreaseMaxLatency) {
-#                     if (0 >= $minVirtResTime) {
-#                         # Use age of oldest product, instead
-#                         $minVirtResTime = $ageOldest;
-#                     }
-#                     $minVirtResTime = 1 if (0 >= $minVirtResTime);
-#                     my $newMaxLatency = $minVirtResTime;
-#                     my $newTimeOffset = $newMaxLatency;
+    print(f"The value of the 'regpath" + "{RECONCILIATION_MODE}" + " registry-parameter is '{reconMode}'\n")
 
-#                     errmsg("vetQueueSize(): Decreasing the maximum acceptable ".
-#                         "latency and the time-offset of requests (registry ".
-#                         "parameters \"regpath{MAX_LATENCY}\" and ".
-#                         "\"regpath{TIME_OFFSET}\") to $newTimeOffset ".
-#                         "seconds...");
+    #1.
+    if increaseQueue        == reconMode:
+        return _increaseQueue(reg, envVar, pqMonElements)
+    #2.
+    if decreaseMaxLatency   == reconMode:
+        return _decreaseQueue(reg, envVar)
+    #3.
+    if doNothing            == reconMode:
+        return _doNothing(pqMonElements)
 
-#                     print "Saving new time parameters...\n";
-#                     if (saveTimePar($newTimeOffset, $newMaxLatency)) {
-#                         $status = 2;    # major failure
-#                     }
-#                     else {
-#                         if (!isRunning($pid_file, $ip_addr)) {
-#                             $status = 0;# success
-#                         }
-#                         else {
-#                             print "Restarting the LDM...\n";
-#                             if (stop_ldm()) {
-#                                 errmsg("vetQueueSize(): Couldn't stop LDM");
-#                                 $status = 2;        # major failure
-#                             }
-#                             else {
-#                                 if (start_ldm()) {
-#                                     errmsg("vetQueueSize(): ".
-#                                             "Couldn't start LDM");
-#                                     $status = 2;    # major failure
-#                                 }
-#                                 else {
-#                                     $status = 0     # success
-#                                 }
-#                             }           # LDM stopped
-#                         }               # LDM is running
-#                     }                   # new time parameters saved
-
-#                     system("pqutil -C");# reset queue metrics
-#                 }                       # mode is decrease max latency
-#                 elsif ($reconMode eq $doNothing) {
-#                     my @newParams = computeNewQueueSize($minVirtResTime,
-#                             $ageOldest, $mvrtSize, $mvrtSlots);
-#                     my $newByteCount = $newParams[0];
-#                     my $newSlotCount = $newParams[1];
-#                     errmsg("vetQueueSize(): The queue should be $newByteCount ".
-#                         "bytes in size with $newSlotCount slots or the ".
-#                         "maximum-latency parameter should be decreased to ".
-#                         "$minVirtResTime seconds. You should set ".
-#                         "registry-parameter \"regpath{RECONCILIATION_MODE}\" ".
-#                         "to \"$increaseQueue\" or \"$decreaseMaxLatency\" or ".
-#                         "manually adjust the relevant registry parameters and ".
-#                         "recreate the queue.");
-#                     $status = 1;        # small queue or big max-latency
-#                 }
-#                 else {
-#                     errmsg("Unknown reconciliation mode: \"$reconMode\"");
-#                     $status = 2;        # major failure
-#                 }
-#             }                           # reconciliation needed
-#         }                               # pqmon(1) success
-#     }                                   # queue has reached equilibrium
-
-#     return $status;sub vetQueueSize
-# {
-#     my $status = 2;                     # default major failure
-#     my $etime = getElapsedTimeOfServer();
-
-#     if ($etime < $max_latency) {
-#         $status = 0;                    # too soon to tell
-#     }
-#     else {
-#         chomp(my $line = `pqmon -S -q $pq_path`);
-
-#         if ($?) {
-#             errmsg("vetQueueSize(): pqmon(1) failure");
-#             $status = 2;                # major failure
-#         }
-#         else {
-#             my @params = split(/\s+/, $line);
-#             my $isFull = $params[0];
-#             my $ageOldest = $params[7];
-#             my $minVirtResTime = $params[9];
-#             my $mvrtSize = $params[10];
-#             my $mvrtSlots = $params[11];
-
-#             if (!$isFull || $minVirtResTime < 0 
-#                     || $minVirtResTime >= $max_latency
-#                     || $mvrtSize <= 0 || $mvrtSlots <= 0) {
-#                 $status = 0;            # reconciliation not yet needed
-#             }
-#             else {
-#                 my $increaseQueue = "increase queue";
-#                 my $decreaseMaxLatency = "decrease maximum latency";
-#                 my $doNothing = "do nothing";
-
-#                 errmsg("vetQueueSize(): The maximum acceptable latency ".
-#                     "(registry parameter \"regpath{MAX_LATENCY}\": ".
-#                     "$max_latency seconds) is greater ".
-#                     "than the observed minimum virtual residence time of ".
-#                     "data-products in the queue ($minVirtResTime seconds).  ".
-#                     "This will hinder detection of duplicate data-products.");
-
-#                 print "The value of the ".
-#                     "\"regpath{RECONCILIATION_MODE}\" registry-parameter is ".
-#                     "\"$reconMode\"\n";
-
-#                 if ($reconMode eq $increaseQueue) {
-#                     my @newParams = computeNewQueueSize($minVirtResTime, 
-#                             $ageOldest, $mvrtSize, $mvrtSlots);
-#                     my $newByteCount = $newParams[0];
-#                     my $newSlotCount = $newParams[1];
-#                     my $newQueuePath = "$pq_path.new";
-
-#                     errmsg("vetQueueSize(): Increasing the capacity of the ".
-#                             "queue to $newByteCount bytes and $newSlotCount ".
-#                             "slots...");
-
-#                     if (system("pqcreate -c -S $newSlotCount -s $newByteCount ".
-#                             "-q $newQueuePath")) {
-#                         errmsg("vetQueueSize(): Couldn't create new queue: ".
-#                             "$newQueuePath");
-#                         $status = 2;            # major failure
-#                     }
-#                     else {
-#                         my $restartNeeded;
-
-#                         $status = 0;            # success so far
-
-#                         if (!isRunning($pid_file, $ip_addr)) {
-#                             $restartNeeded = 0;
-#                         }
-#                         else {
-#                             if (stop_ldm()) {
-#                                 $status = 2;        # major failure
-#                             }
-#                             else {
-#                                 $restartNeeded = 1;
-#                             }
-#                         }
-#                         if (0 == $status) {
-#                             if (grow($pq_path, $newQueuePath)) {
-#                                 $status = 2;        # major failure
-#                             }
-#                             else {
-#                                 print "Saving new queue parameters...\n";
-#                                 if (saveQueuePar($newByteCount,
-#                                             $newSlotCount)) {
-#                                     $status = 2;    # major failure
-#                                 }
-#                             }
-
-#                             if ($restartNeeded) {
-#                                 print "Restarting the LDM...\n";
-#                                 if (start_ldm()) {
-#                                     errmsg("vetQueueSize(): ".
-#                                         "Couldn't restart the LDM");
-#                                     $status = 2;    # major failure
-#                                 }
-#                             }
-#                         }               # LDM stopped
-#                     }                   # new queue created
-
-#                     system("pqutil -C");# reset queue metrics
-#                 }                       # mode is increase queue
-#                 elsif ($reconMode eq $decreaseMaxLatency) {
-#                     if (0 >= $minVirtResTime) {
-#                         # Use age of oldest product, instead
-#                         $minVirtResTime = $ageOldest;
-#                     }
-#                     $minVirtResTime = 1 if (0 >= $minVirtResTime);
-#                     my $newMaxLatency = $minVirtResTime;
-#                     my $newTimeOffset = $newMaxLatency;
-
-#                     errmsg("vetQueueSize(): Decreasing the maximum acceptable ".
-#                         "latency and the time-offset of requests (registry ".
-#                         "parameters \"regpath{MAX_LATENCY}\" and ".
-#                         "\"regpath{TIME_OFFSET}\") to $newTimeOffset ".
-#                         "seconds...");
-
-#                     print "Saving new time parameters...\n";
-#                     if (saveTimePar($newTimeOffset, $newMaxLatency)) {
-#                         $status = 2;    # major failure
-#                     }
-#                     else {
-#                         if (!isRunning($pid_file, $ip_addr)) {
-#                             $status = 0;# success
-#                         }
-#                         else {
-#                             print "Restarting the LDM...\n";
-#                             if (stop_ldm()) {
-#                                 errmsg("vetQueueSize(): Couldn't stop LDM");
-#                                 $status = 2;        # major failure
-#                             }
-#                             else {
-#                                 if (start_ldm()) {
-#                                     errmsg("vetQueueSize(): ".
-#                                             "Couldn't start LDM");
-#                                     $status = 2;    # major failure
-#                                 }
-#                                 else {
-#                                     $status = 0     # success
-#                                 }
-#                             }           # LDM stopped
-#                         }               # LDM is running
-#                     }                   # new time parameters saved
-
-#                     system("pqutil -C");# reset queue metrics
-#                 }                       # mode is decrease max latency
-#                 elsif ($reconMode eq $doNothing) {
-#                     my @newParams = computeNewQueueSize($minVirtResTime,
-#                             $ageOldest, $mvrtSize, $mvrtSlots);
-#                     my $newByteCount = $newParams[0];
-#                     my $newSlotCount = $newParams[1];
-#                     errmsg("vetQueueSize(): The queue should be $newByteCount ".
-#                         "bytes in size with $newSlotCount slots or the ".
-#                         "maximum-latency parameter should be decreased to ".
-#                         "$minVirtResTime seconds. You should set ".
-#                         "registry-parameter \"regpath{RECONCILIATION_MODE}\" ".
-#                         "to \"$increaseQueue\" or \"$decreaseMaxLatency\" or ".
-#                         "manually adjust the relevant registry parameters and ".
-#                         "recreate the queue.");
-#                     $status = 1;        # small queue or big max-latency
-#                 }
-#                 else {
-#                     errmsg("Unknown reconciliation mode: \"$reconMode\"");
-#                     $status = 2;        # major failure
-#                 }
-#             }                           # reconciliation needed
-#         }                               # pqmon(1) success
-#     }                                   # queue has reached equilibrium
-
-#     return $status;
-# }
-# }
+    #4. else
+    print(f"Unknown reconciliation mode: '{reconMode}'")
+    status = 2        # major failure
+    return status
 
 
 
@@ -425,6 +475,13 @@ def ldmConfig(reg, env):
 ###############################################################################
 
 def isRunning(reg, envir, ldmpingFlag):    
+
+    # init
+    running                 = False
+    pid                     = 0  
+    pidFilename             = envir['pid_file']
+    ip_addr                 = reg['ip_addr']
+    envir['ldmd_running']   = False
 
     print(f"\n - Checking if LDM is running...")
     ldmhome = os.environ.get("LDMHOME", None)
@@ -437,23 +494,23 @@ def isRunning(reg, envir, ldmpingFlag):
     os.environ['PATH'] = ldmhome + "/bin:" + ldmhome + "/util:" + os.environ['PATH']
 
     # Retrieve ldmd process id (if running):
-    pidFilename  = envir['pid_file']
-    ip_addr      = reg['ip_addr']
-    pid = 0
     with open(pidFilename, 'r') as pidFile:
         pid = pidFile.read().replace('\n','')
 
     pid     = int(pid)
-    running = -1
-    envir['pid'] = None
+
+    status = psutil.pid_exists(pid)
+
     if psutil.pid_exists(pid):
         #print(f"\n\tprocess with pid { pid } exists!\n")
         envir['pid'] = pid
-        running = 0
-        
+        running = True
+        envir['ldmd_running'] = True
+        return running
+    
 
     # The following test is incompatible with the use of a proxy
-    if running != 0 and ldmpingFlag:
+    if not running and ldmpingFlag:
 
         cmd_line = "ldmping -l- -i 0"
         if not ip_addr == "0.0.0.0":
@@ -461,29 +518,21 @@ def isRunning(reg, envir, ldmpingFlag):
         
         cmd_line = f"{ cmd_line } > /dev/null 2>&1"
         running = os.system( cmd_line )
-        if running == 0:
+        if running:
             envir['ldmd_running'] = True
-        else: 
-            envir['ldmd_running'] = False
 
     return running
 
 
-###############################################################################
-# Check that a data-product has been inserted into the product-queue
-###############################################################################
-
-def executePqMon(pq_path):
+# Helper function
+def _executePqMon(pq_path):
 
     failure = 0
     pqmon_cmd_line = f"pqmon -S -q {pq_path}  2>&1"
 
     try:
-        #print(pqmon_cmd_line)
         process_output = subprocess.check_output( pqmon_cmd_line, shell=True )
-    
         pqmon_output  = process_output.decode()[:-1]
-    
         return failure, pqmon_output
 
     except:
@@ -492,12 +541,16 @@ def executePqMon(pq_path):
         return failure, ""
 
 
+###############################################################################
+# Check that a data-product has been inserted into the product-queue
+###############################################################################
+
 def check_insertion(reg):
 
     status = 0
 
-    pq_path = "/home/miles/projects/ldm/var/queues/ldm.pq"
-    status, pq = executePqMon(pq_path)
+    pq_path = reg["pq_path"]
+    status, pq = _executePqMon(pq_path)
     if status == -11:
         print("check_insertion(): pqmon(1) failure")
         return status
@@ -505,7 +558,6 @@ def check_insertion(reg):
     print(f"pqmon: {pq}")
 
     age= pq.split()[8]
-    print(f"Age: {age}")
     insertion_check_period = reg["insertion_check_period"]
 
     if age > insertion_check_period:
@@ -576,7 +628,7 @@ def checkLdm(envVar):
     ip_addr  = envVar['ip_addr']
 
     print("Checking for a running LDM system...\n")
-    if not isRunning(pid_file, ip_addr):
+    if not isRunning(reg, envVar, True):
         print("The LDM server is not running")
         status = 2
     
@@ -668,12 +720,13 @@ def areNTPServersAvailable( number_of_servers):
         failure = 1
 
     return failure
+
+
 ###############################################################################
 # Check the system clock
 ###############################################################################
 
 def checkTime(reg):
-
     
     failure = 0;
 
@@ -709,41 +762,42 @@ def checkTime(reg):
                     \nExecute the command '{ntpdate_cmd_xpath}' to set the pathname of \
                     \nthe ntpdate(1) utility to 'path'."
             print(error)
+            return -1
+
+        
+        if status == -2:
+            error = f"\nCouldn't get time from time-server at {timeServer} using the ntpdate(1) \
+                    \nutility, {ntpdate_cmd}\". \
+                    \nIf the utility is valid and this happens often, then remove {timeServer} \
+                    \nfrom registry parameter regpath" + "{NTPDATE_SERVERS}" + "'."
+
+            print(error)
+            nbServs -= 1
+            # remove this time server from list:
+            ntpdate_servers.remove(timeServer)
+
+            # check if no more valid server remain to try out:
+            if len(ntpdate_servers) == 0:
+                error = f"\nThere were no valid time servers that could be used to get time from. \
+                            \nPlease check the registry parameter 'regutil regpath" + "{NTPDATE_SERVERS}" + "'."
+                print(error)
+                return(-1)
+
+            # continue with remaining servers
+            #print(ntpdate_servers)
+            continue
 
         else:
-            if status == -2:
-                error = f"\nCouldn't get time from time-server at {timeServer} using the ntpdate(1) \
-                        \nutility, {ntpdate_cmd}\". \
-                        \nIf the utility is valid and this happens often, then remove {timeServer} \
-                        \nfrom registry parameter regpath" + "{NTPDATE_SERVERS}" + "'."
-
+           
+            if abs(offset) > check_time_limit:
+                error = f"\nThe system clock is more than {check_time_limit} seconds off, \
+                            \nwhich is specified by registry parameter 'regpath" + "{CHECK_TIME_LIMIT}" + "'."
                 print(error)
-                nbServs -= 1
-                # remove this time server from list:
-                ntpdate_servers.remove(timeServer)
-
-                # check if no more valid server remain to try out:
-                if len(ntpdate_servers) == 0:
-                    error = f"\nThere were no valid time servers that could be used to get time from. \
-                                \nPlease check the registry parameter 'regutil regpath" + "{NTPDATE_SERVERS}" + "'."
-                    print(error)
-                    exit(-1)
-
-                # continue with remaining servers
-                #print(ntpdate_servers)
-                continue
 
             else:
-               
-                if abs(offset) > check_time_limit:
-                    error = f"\nThe system clock is more than {check_time_limit} seconds off, \
-                                \nwhich is specified by registry parameter 'regpath" + "{CHECK_TIME_LIMIT}" + "'."
-                    print(error)
-
-                else:
-                    failure = 0;
-                
-                break
+                failure = 0;
+            
+            break
 
 
             # print(f"Offset: {offset}")
@@ -822,8 +876,8 @@ if __name__ == "__main__":
     # Check if LDM is running: DONE
     isRunning(registryDict, envVarDict, True)
 
-#    envHandler.prettyPrintEnvVars()
-#    regHandler.prettyPrintRegistry()
+    envHandler.prettyPrintEnvVars()
+    regHandler.prettyPrintRegistry()
 
     # new log rotation: TO-CHECK
     # newLog(registryDict)
@@ -838,10 +892,12 @@ if __name__ == "__main__":
     #checkLdm(envVarDict)
 
     # print("checkTime:")
-    # checkTime(registryDict)
+    #checkTime(registryDict)
     # print("checkTime: DONE")
 
 
     status = check_insertion(registryDict)
     if status == -1:
         print("check_insertion() failed!")
+
+    vetQueueSize(registryDict, envVarDict)
