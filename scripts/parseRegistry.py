@@ -105,7 +105,7 @@ class RegistryParser:
                 self.registryEntries[entry]= self.registryEntries[entry].split()
 
         # 3. Convert all numeral strings to numbers:
-        self.stringToNum()
+        self.stringToInt()
 
         # 4.
         # Check the hostname for a fully-qualified version.
@@ -118,22 +118,22 @@ class RegistryParser:
             print(errmsg)
             exit(0);
 
-    def stringToNum(self):
+    def stringToInt(self):
 
-            self.registryEntries["delete_info_files"] *= 1
-            self.registryEntries["insertion_check_period"] *= 1
-            self.registryEntries["check_time_enabled"] *= 1
-            self.registryEntries["check_time_limit"] *= 1
-            self.registryEntries["warn_if_check_time_disabled"] *= 1
-            self.registryEntries["ntpdate_timeout"] *= 1            
-            self.registryEntries["num_logs"] *= 1
-            self.registryEntries["log_rotate"] *= 1
-            self.registryEntries["num_metrics"] *= 1
-            self.registryEntries["max_clients"] *= 1
-            self.registryEntries["max_latency"] *= 1
-            self.registryEntries["port"] *= 1
-            self.registryEntries["server_time_offset"] *= 1
-            self.registryEntries["fmtp_retx_timeout"] *= 1
+            self.registryEntries["delete_info_files"]           = int(self.registryEntries["delete_info_files"])
+            self.registryEntries["insertion_check_period"]      = int(self.registryEntries["insertion_check_period"])
+            self.registryEntries["check_time_enabled"]          = int(self.registryEntries["check_time_enabled"])
+            self.registryEntries["check_time_limit"]            = int(self.registryEntries["check_time_limit"])
+            self.registryEntries["warn_if_check_time_disabled"] = int(self.registryEntries["warn_if_check_time_disabled"])
+            self.registryEntries["ntpdate_timeout"]             = int(self.registryEntries["ntpdate_timeout"])
+            self.registryEntries["num_logs"]                    = int(self.registryEntries["num_logs"])
+            self.registryEntries["log_rotate"]                  = int(self.registryEntries["log_rotate"])
+            self.registryEntries["num_metrics"]                 = int(self.registryEntries["num_metrics"])
+            self.registryEntries["max_clients"]                 = int(self.registryEntries["max_clients"])
+            self.registryEntries["max_latency"]                 = int(self.registryEntries["max_latency"])
+            self.registryEntries["port"]                        = int(self.registryEntries["port"])
+            self.registryEntries["server_time_offset"]          = int(self.registryEntries["server_time_offset"])
+            self.registryEntries["fmtp_retx_timeout"]           = int(self.registryEntries["fmtp_retx_timeout"])
 
 
     # More validation may be required
@@ -159,6 +159,7 @@ class RegistryParser:
         except:
             print(f"Error in converting pq_size: {pq_size}")
             return -1
+
 
     def getRegistryEntries(self):
         return self.registryEntries
