@@ -108,51 +108,51 @@ class CLIParser:
         self.cliParser.add_argument(cmd, help='', metavar='')
         
         if cmd == "start":            
-            self.cliParser.add_argument('-v',               action='store_true',                    help='verbose', required=False)
-            self.cliParser.add_argument('-x',               action='store_true',                    help='debug', required=False)
-            self.cliParser.add_argument('-m maxLatency',    action="store", dest='m',   type=int,   help='Maximum latency', metavar='', required=False)
-            self.cliParser.add_argument('-o offset',        action="store", dest='o',   type=int,   help='', metavar='', required=False)
-            self.cliParser.add_argument('-q q_path',        action="store", dest='q',   type=str,   default=os.path.expandvars('$LDMHOME/var/queues/ldm.pq'), help='', metavar='', required=False)
-            self.cliParser.add_argument('-M max_clients',   action="store", dest='M',   type=int,   help='', metavar='', required=False)
-            self.cliParser.add_argument('conf_file',        nargs='?',                type=None,   default=os.path.expandvars('$LDMHOME/etc/ldmd.conf'), help='', metavar='')
+            self.cliParser.add_argument('-v',               action='store_true', help='verbose', required=False)
+            self.cliParser.add_argument('-x',               action='store_true', help='debug', required=False)
+            self.cliParser.add_argument('-m maxLatency',    action="store", dest='m', type=int,  help='Maximum latency', metavar='', required=False)
+            self.cliParser.add_argument('-o offset',        action="store", dest='o', type=int,  help='', metavar='', required=False)
+            self.cliParser.add_argument('-q q_path',        action="store", dest='q', type=str,  default=os.path.expandvars('$LDMHOME/var/queues/ldm.pq'), help='', metavar='', required=False)
+            self.cliParser.add_argument('-M max_clients',   action="store", dest='M', type=int,  help='', metavar='', required=False)
+            self.cliParser.add_argument('conf_file',        nargs='?', type=None, default=os.path.expandvars('$LDMHOME/etc/ldmd.conf'), help='', metavar='')
     
         if cmd == "mkqueue":
-            self.cliParser.add_argument('-v',       action='store_true',            help='verbose', required=False)
-            self.cliParser.add_argument('-x',       action='store_true',            help='debug', required=False)
-            self.cliParser.add_argument('-c',       action='store_true',            help='', required=False)
-            self.cliParser.add_argument('-f',       action='store_true',            help='', required=False)
-            self.cliParser.add_argument('-q q_path', action="store", dest='q',      type=str,   default=os.path.expandvars('$LDMHOME/var/queues/ldm.pq'), help='', metavar='', required=False)
+            self.cliParser.add_argument('-v',       action='store_true', help='verbose', required=False)
+            self.cliParser.add_argument('-x',       action='store_true', help='debug', required=False)
+            self.cliParser.add_argument('-c',       action='store_true', help='', required=False)
+            self.cliParser.add_argument('-f',       action='store_true', help='', required=False)
+            self.cliParser.add_argument('-q q_path', action="store", dest='q', default=os.path.expandvars('$LDMHOME/var/queues/ldm.pq'), help='', metavar='', required=False)
         
         #(key ,val) = self.cliParser.parse_known_args()
 
         if cmd == "delqueue":
-            self.cliParser.add_argument('-q q_path', action="store", dest='q',      type=str,   default=os.path.expandvars('$LDMHOME/var/queues/ldm.pq'), help='', metavar='', required=False)
+            self.cliParser.add_argument('-q q_path', action="store", dest='q', type=str, default=os.path.expandvars('$LDMHOME/var/queues/ldm.pq'), help='', metavar='', required=False)
 
         if cmd == "mksurfqueue":
-            self.cliParser.add_argument('-v',       action='store_true',            help='verbose', required=False)
-            self.cliParser.add_argument('-x',       action='store_true',            help='debug', required=False)
-            self.cliParser.add_argument('-c',       action='store_true',            help='', required=False)
-            self.cliParser.add_argument('-f',       action='store_true',            help='', required=False)
-            self.cliParser.add_argument('-q q_path', action="store", dest='q',      type=str, default=os.path.expandvars('$LDMHOME/var/queues/pqsurf.pq'), help='', metavar='', required=False)
+            self.cliParser.add_argument('-v',       action='store_true', help='verbose', required=False)
+            self.cliParser.add_argument('-x',       action='store_true', help='debug', required=False)
+            self.cliParser.add_argument('-c',       action='store_true', help='', required=False)
+            self.cliParser.add_argument('-f',       action='store_true', help='', required=False)
+            self.cliParser.add_argument('-q q_path',action="store", dest='q', default=os.path.expandvars('$LDMHOME/var/queues/pqsurf.pq'), help='', metavar='', required=False)
 
         if cmd == "delsurfqueue":
-            self.cliParser.add_argument('-q q_path', action="store", dest='q',      type=str, default=os.path.expandvars('$LDMHOME/var/queues/pqsurf.pq'), help='', metavar='', required=False)
+            self.cliParser.add_argument('-q q_path', action="store", dest='q', type=str, default=os.path.expandvars('$LDMHOME/var/queues/pqsurf.pq'), help='', metavar='', required=False)
 
         if cmd == "newlog":
-            self.cliParser.add_argument('-n numlogs', action="store", dest='n',     default=7, type=int,    help='', metavar='', required=False)
-            self.cliParser.add_argument('-l logfile', action="store", dest='l',     type=str, default=os.path.expandvars('$LDMHOME/var/logs/ldmd.log'), help='', metavar='', required=False)     
+            self.cliParser.add_argument('-n numlogs', action="store", dest='n', default=7, type=int,    help='', metavar='', required=False)
+            self.cliParser.add_argument('-l logfile', action="store", dest='l', type=str, default=os.path.expandvars('$LDMHOME/var/logs/ldmd.log'), help='', metavar='', required=False)     
 
         if cmd == "pqactcheck":
-            self.cliParser.add_argument('-p pqact_conf', action="store", dest='p',  type=str,   help='', metavar='', required=False)
-            self.cliParser.add_argument('conf_file',     nargs='+',                 type=str,   help='', metavar='')
+            self.cliParser.add_argument('-p pqact_conf', action="store", dest='p', type=str,  default=os.path.expandvars('$LDMHOME/etc/pqact.conf'), help='', metavar='', required=False)
+            self.cliParser.add_argument('conf_file',     nargs='?', type=str,  default=os.path.expandvars('$LDMHOME/etc/ldmd.conf'), help='', metavar='')
 
         if cmd == "watch":
-            self.cliParser.add_argument('-f feedset', action="store", dest='f',    default='ANY',  help='', metavar='', required=False)
-            self.cliParser.add_argument('-p pattern', action="store", dest='p',    default='.*',   help='', metavar='', required=False)
+            self.cliParser.add_argument('-f feedset', action="store", dest='f', default='ANY',  help='', metavar='', required=False)
+            self.cliParser.add_argument('-p pattern', action="store", dest='p', default='.*',   help='', metavar='', required=False)
 
         if cmd == "newlog":                                                        # begin: YYYYMMDD[.hh[mm[ss]]]
-            self.cliParser.add_argument('-b begin', action="store", dest='b',       default=19700101, type=float, help='', metavar='', required=False)
-            self.cliParser.add_argument('-e end',   action="store", dest='e',       default=30000101, type=float, help='', metavar='', required=False)
+            self.cliParser.add_argument('-b begin', action="store", dest='b', default=19700101, type=float, help='', metavar='', required=False)
+            self.cliParser.add_argument('-e end',   action="store", dest='e', default=30000101, type=float, help='', metavar='', required=False)
         
         # commands without arguments do not need to be parsed.
         #############################################################################
@@ -164,7 +164,7 @@ class CLIParser:
         if len(config_file_argList) == 1:
             cliDico['conf_file'] = config_file_argList[0]
         
-        #print(f"args dico: {cliDico}")
+        #print(f"\n\targs dico: {cliDico}\n")
 
         return cliDico 
         
@@ -174,6 +174,9 @@ class CLIParser:
 
         add_v = 1
         add_x = 0
+        pqact_conf_option = 0
+        pqact_conf = ""
+        
         for key, val in namespaceDict.items():
             
             if key == 'v' and val == False:
@@ -181,6 +184,15 @@ class CLIParser:
 
             if key == 'x' and val == True:
                 add_x = 1
+
+            if key == 'p' and not val == None:
+                
+                default = os.path.expandvars('$LDMHOME/etc/pqact.conf')
+                if default != val:
+                    pqact_conf_option = 1
+                    pqact_conf = val        
+                else: 
+                    pqact_conf = default
 
             if not val == None and not val == False:
                 if val == True:
@@ -197,7 +209,12 @@ class CLIParser:
         if add_v == 0 and add_x == 1:
             # option -x goes along with -v, add -v
             fullCommand += f"-v"
-            
+        
+        # add to CLIdico: pqact_conf_option and its value
+        namespaceDict['pqact_conf_option'] = pqact_conf_option
+        namespaceDict['pqact_conf'] = pqact_conf
+        
+        #print(namespaceDict)
         return fullCommand
 
 
@@ -268,3 +285,14 @@ conf_file:
     '''
 
         print(text)
+
+
+if __name__ == "__main__":
+
+
+    cliInst         = CLIParser()              # instance of CLIParser
+    cmdsDico        = cliInst.getFullCommandsDict()
+    
+    print(cmdsDico)
+
+

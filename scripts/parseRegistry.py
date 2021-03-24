@@ -27,7 +27,10 @@
 from xml.dom.minidom import parse
 import xml.dom.minidom
 
-class RegistryParser:
+# Singleton Pattern
+
+class RegistryParser(object):
+    _instance = None
 
     registryEntries = {
 
@@ -77,46 +80,57 @@ class RegistryParser:
     }
 
 
-    def __init__(self):
 
-        self.DOMTree = xml.dom.minidom.parse("registry.xml")        
-        for entry, val in self.registryEntries.items():
-        
-            xmlElem = list(val.keys())[0]
-            rank = list(val.values())[0]
+    def __new__(self):
+        if self._instance is None:
+            #print('Creating ParseRegistry singleton:')
+            self._instance = super(RegistryParser, self).__new__(self)
+            # Put any initialization here.
 
-            tagName = self.DOMTree.getElementsByTagName(xmlElem)[rank].firstChild.data
-            #print(f"\t --> {entry}: {tagName}  ")
+            # Where is the registry??????????????????????????????
+            self.DOMTree = xml.dom.minidom.parse("registry.xml") 
+            #print(self.registryEntries)  
             
-            self.registryEntries[entry]= tagName
+            for entry, val in self.registryEntries.items():
+                #print(f"ParseRegistry: {entry}, {val}")
+                xmlElem = list(val.keys())[0]
+                rank = list(val.values())[0]
 
-            # special handling
-            # 1,
-            if entry == "pq_size" or entry == "surf_size":
-                expandedSize = self.convertSize(self.registryEntries[entry])
-                if expandedSize == -1:
-                    print(f"Please check the registry. Size of {entry} is incorrect.")
-                    exit(0)
+                tagName = self.DOMTree.getElementsByTagName(xmlElem)[rank].firstChild.data
+                #print(f"\t --> {entry}: {tagName}  ")
+                
+                self.registryEntries[entry]= tagName
 
-                self.registryEntries[entry] = expandedSize
+                # special handling
+                # 1,
+                if entry == "pq_size" or entry == "surf_size":
+                    expandedSize = self.convertSize(self, self.registryEntries[entry])
+                    if expandedSize == -1:
+                        print(f"Please check the registry. Size of {entry} is incorrect.")
+                        exit(0)
 
-            # 2.
-            if entry == "ntpdate_servers" :
-                self.registryEntries[entry]= self.registryEntries[entry].split()
+                    self.registryEntries[entry] = expandedSize
 
-        # 3. Convert all numeral strings to numbers:
-        self.stringToInt()
+                # 2.
+                if entry == "ntpdate_servers" :
+                    self.registryEntries[entry]= self.registryEntries[entry].split()
 
-        # 4.
-        # Check the hostname for a fully-qualified version.
-        #     # More validation may be required
-        if self.registryEntries['hostname'].startswith("."):
-            HOSTNAME="HOSTNAME"
-            errmsg = f"\n\tError: The LDM-hostname is not fully-qualified. \
-                \n\tExecute the command 'regutil -s <hostname> regpath{{HOSTNAME}}' \
-                \n\tto set the fully-qualified name of the host."
-            print(errmsg)
-            exit(0);
+            # 3. Convert all numeral strings to numbers:
+            self.stringToInt(self)
+
+            # 4.
+            # Check the hostname for a fully-qualified version.
+            #     # More validation may be required
+            if self.registryEntries['hostname'].startswith("."):
+                HOSTNAME="HOSTNAME"
+                errmsg = f"\n\tError: The LDM-hostname is not fully-qualified. \
+                    \n\tExecute the command 'regutil -s <hostname> regpath" + "{HOSTNAME} \
+                    \n\tto set the fully-qualified name of the host."
+                print(errmsg)
+                exit(0);
+
+        return self._instance
+        
 
     def stringToInt(self):
 
@@ -169,3 +183,10 @@ class RegistryParser:
         print(f"\n--> Registry items:\n")
         for k, v in self.registryEntries.items():
             print(f"\t{k} \t{v}")
+
+
+
+if __name__ == "__main__":
+
+    c = RegistryParser()
+    c.prettyPrintRegistry()

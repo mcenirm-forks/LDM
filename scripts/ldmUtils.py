@@ -590,17 +590,17 @@ def printMetrics(reg):
     all_metrics.insert(0, thisTime)
     
     time_legend = "\ttime: \t\tYYYYmmdd.hhmmss"
-    load_legend = "\tuptime (avg at): 1mn, 5mn, 15mn"
+    load_legend = "\tuptime (avg at): 1 mn, 5 mn, 15 mn"
     port_legend = "\tport (count): \tremote, local"
     pq_legend   = "\tpq: \t\tage, prodCount, byteCount"
     cpu_legend  = "\tCPU: \t\tuserTime, sysTime, idleTime, waitTime, memUsed, memFree, swapUsed, swapFree, contextSwitches"
 
-    all_legend  = "\n   time  \t|     uptime      | port |            pq         |   CPU "
+    all_legend  = "\n   time  \t|     uptime     | port |            pq          |   CPU "
     print(all_legend) 
     print(all_metrics)
 
     # print the legend:
-    print(f"\n{time_legend}\n{load_legend}\n{port_legend}\n{pq_legend}\n{cpu_legend}\n")
+    print(f"\nLegend:\n{time_legend}\n{load_legend}\n{port_legend}\n{pq_legend}\n{cpu_legend}\n")
 
 
 #
@@ -610,6 +610,18 @@ def plotMetrics(begin, end, metrics_file):
     plot_cmd = f"plotMetrics -b {begin} -e {end} {metrics_files}"
     return os.system(plot_cmd)
 
+def readPqActConfFromLdmConf(ldmdConfPathname):
+
+    pqactConf = ()
+    f = open(ldmdConfPathname, "r")
+    for line in f:
+        if not (line.lower().startswith("exec") and "pqact" in line):
+            continue
+        print(line)
+        pqactConf = pqactConf + (line.split()[2],)
+
+    f.close()
+    return pqactConf
 
 
 if __name__ == "__main__":
@@ -640,7 +652,7 @@ if __name__ == "__main__":
     #print(isProductQueueOk())  # DONE
     #print(getPortCount(234))   # DONE
     #print(getPq(path))         # DONE
-    printMetrics(registryDict)  # DONE
+    #printMetrics(registryDict)  # DONE
 
     metrics_files = "/home/miles/projects/ldm/var/logs/metrics.txt"
 
@@ -657,3 +669,6 @@ if __name__ == "__main__":
     # ntpserver = "0.us.pool.ntp.org"
     # print(_executeNtpDateCommand(ntpdate_cmd, 5, ntpserver))  # DONE
 
+    ldmdConfPathname = "ldmd.conf"      #registryDict["ldmd_conf"]
+    print(readPqActConfFromLdmConf(ldmdConfPathname))
+    

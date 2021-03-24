@@ -99,13 +99,13 @@ class LDMenvironmentHandler:
             lock.acquire(timeout=20)
             self.envVariables['lock_acquired'] = True
             self.envVariables['lock'] = lock
-            self.verbose and print("Lock acquired.")
+            #self.verbose and print("Lock acquired.")
         else:
             self.verbose and print(f"\nLock already acquired: lockID: {lock}\n")
             return status
 
-        self.verbose and print(f"\n acquired: {self.envVariables['lock_acquired']}\n")
-        self.verbose and print(f"\n lockID: {self.envVariables['lock']}\n")
+        #self.verbose and print(f"\n acquired: {self.envVariables['lock_acquired']}\n")
+        #self.verbose and print(f"\n lockID: {self.envVariables['lock']}\n")
         
         return status
 
@@ -130,13 +130,13 @@ class LDMenvironmentHandler:
                 # lock.acquire(timeout=10)
                 # self.verbose and print(f"Successfulllly Acquired!..")
 
-                self.verbose and self.verbose and print(f"Releasing it NOW...")
+                #self.verbose and print(f"Releasing it NOW...")
                 self.envVariables['lock'].release()
                 
                 self.envVariables['lock_acquired'] = False
                 self.envVariables['lock'] = None
                 
-                self.verbose and print(f"releaseLock(): lock released.")
+                #self.verbose and print(f"releaseLock(): lock released.")
 
             except Timeout:
                 self.verbose and print(f"releaseLock(): Could not release lock!")

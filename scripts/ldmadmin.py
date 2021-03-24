@@ -45,8 +45,11 @@ from sys 	import exit
 from time 	import sleep
 
 import parseCLI 		as parseCli
-import parseRegistry 	as parseReg
+import parseRegistry 	as regHdler
 import environHandler	as envHdler
+
+# from parseRegistry import RegistryParser
+# from environHandler import LDMenvironmentHandler
 
 EXIT_MESSAGE='\n\tThank you for using ldmadmin...\n\n'
 
@@ -78,27 +81,39 @@ class LDMCommandsHandler:
 	def returnCmdCortege(self, cmd):
 		return self.cmdsDico[cmd][0]
 
-	def displayRegistryAndEnv(self, registryEntries, envVariables):
-		print(f"\n\t====> Registry XML: \n {registryEntries} \n")
-		print(f"\n\t====> Environment variables: \n {envVariables} \n")
+	def displayRegistryAndEnv(self):
+
+		envt = envHdler.LDMenvironmentHandler()
+		regH = regHdler.RegistryParser()
+    
+		envt.prettyPrintEnvVars()
+		regH.prettyPrintRegistry()
 
 
-	def execute(self, cmdToExecute, toLockOrNot, evnt):
+	def execute(self, cmdToExecute, toLockOrNot, envt):
 		status = 0
 		
+		envVar 				= envt.getEnvVarsDict()
+		pqact_conf_option 	= envVar['pqact_conf_option']
+		#pqact_conf 		= envVar['pqact_conf']
+
 		if toLockOrNot == True:
-			if evnt.getLock() == -1:
+			if envt.getLock() == -1:
 				print(f"Could not get lock for '{cmdToExecute}' to execute properly!")
 				status = -1
 				return status
 
-			print(f"\n\tExecuting in Locked Mode : {cmdToExecute}\n")
-			evnt.releaseLock()
+			print(f"\nExecuting in locked mode : \n\n\t{cmdToExecute}\n")
+			cmdToExecute = f"{cmdToExecute}, lock=True, pqact_conf_option={pqact_conf_option}"
+			print(f"\nExecuting in locked mode : \n\n\t{cmdToExecute}\n")
+			
+			envt.releaseLock()
 
 		else:
+			print(f"\nExecuting in NON locked mode : \n\n\t{cmdToExecute}\n")
+			cmdToExecute = f"{cmdToExecute}, lock=False, pqact_conf_option={pqact_conf_option}"
+			print(f"\nExecuting in NON locked mode : \n\n\t{cmdToExecute}\n")
 			
-			print(f"\n\tExecuting in NON Locked Mode : {cmdToExecute}\n")
-			status = os.system(cmdToExecute)
 
 		return status
 
@@ -106,25 +121,26 @@ class LDMCommandsHandler:
 def main():
 	signal(SIGINT, bye)
 	system('clear')
-	debug = False
+	debug = True #False
 
-	registryEntries = parseReg.RegistryParser().getRegistryEntries()
-	evnt = envHdler.LDMenvironmentHandler()
+	
+	regParser 	= regHdler.RegistryParser()
+	envt		= envHdler.LDMenvironmentHandler()
+	# Registry dict:
+	regDico 	= regParser.getRegistryEntries()
 
 
 	# tab completion:
 	readline.parse_and_bind("tab: complete")
 	cliInst 		= parseCli.CLIParser()				# instance of CLIParser
 	cmdsDico 		= cliInst.getFullCommandsDict()
+	
 	LDMcommands 	= LDMCommandsHandler( cmdsDico )	# instance of 'this'
 	
-
-	checkTime(cmdsDico)
-
-	exit(0)
+	
 
 	if debug:
-		LDMcommands.displayRegistryAndEnv(registryEntries, evnt.getEnvVarsDict())
+		LDMcommands.displayRegistryAndEnv()
 
 	readline.set_completer(LDMcommands.complete)
 
@@ -140,7 +156,6 @@ def main():
 	
 
 	else:
-
 
 # Non-interactive mode (CLI mode)
 		cmd=sys.argv[1]
@@ -158,16 +173,18 @@ def main():
 
 		
 		# if  nbArguments == 2: # command w/o options
-		# 	status 			= LDMcommands.execute(cmd, lockOrNotFlag, evnt)
+		# 	status 			= LDMcommands.execute(cmd, lockOrNotFlag, envt)
 		# else:	
-		cliDico 		= cliInst.cliParserAddArguments(cmd)
-		print(f"\n\nCLI dict: {cliDico}\n")
+		cliDico 					= cliInst.cliParserAddArguments(cmd)
+		#debug and print(f"\n\nCLI dict: {cliDico}\n")
 
-		cliString 		= cliInst.buildCLIcommand(cmd, cliDico)
-		status 			= LDMcommands.execute(cliString, lockOrNotFlag, evnt)
-
-
-
+		cliString 					= cliInst.buildCLIcommand(cmd, cliDico)
+		envVar = envt.getEnvVarsDict()
+		envVar['pqact_conf_option'] = cliDico['pqact_conf_option']
+		envVar['pqact_conf'] 		= cliDico['pqact_conf']
+		#print(cliString)
+		
+		status 						= LDMcommands.execute(cliString, lockOrNotFlag, envt)
 
 
 		# last line:
@@ -198,7 +215,7 @@ def main():
 			# #print(f"\n\tnamespace: {namespace}\n")
 
 			# cliString = cliInst.buildCLIcommand(cmd, namespace)
-			# status = LDMcommands.execute(cmd, cliString, evnt)
+			# status = LDMcommands.execute(cmd, cliString, envt)
 
 
 
