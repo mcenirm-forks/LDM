@@ -254,6 +254,36 @@ def _executePqMon(pq_path):
 def _doesFileExist(path):
     return os.path.exists(path)
 
+def _getLdmdPid(pidFilename):
+    
+    status = -1
+
+    if not _doesFileExist(pidFilename) or os.stat(pidFilename).st_size == 0:
+        print(f"\nisRunning(): ldmd NOT running ({pidFilename} does not exist.)\n")
+        return status
+
+    if os.stat(pidFilename).st_size == 0:
+        print(f"\nisRunning(): ldmd NOT running ({pidFilename} exists but is empty!)\n")
+        return status
+
+    # Retrieve ldmd process id :
+    with open(pidFilename, 'r') as pidFile:
+        pid = pidFile.read().replace('\n','')
+
+        # verbose and print(f"\npid_file: {pidFilename} - pid: '{pid}'\n")
+        try:
+            pid     = int(pid)
+
+        except Exception as e:
+            errmsg(e)
+            print("You may need to run 'ldmadmin clean'.")
+            return status
+
+        if psutil.pid_exists(pid):
+            #print(f"\n\tprocess with pid { pid } exists!\n")
+            return pid
+
+    return status
 
 ###############################################################################
 # Check a queue-file for errors
@@ -612,16 +642,94 @@ def plotMetrics(begin, end, metrics_file):
 
 def readPqActConfFromLdmConf(ldmdConfPathname):
 
-    pqactConf = ()
+    pqactConfs = ()
     f = open(ldmdConfPathname, "r")
     for line in f:
         if not (line.lower().startswith("exec") and "pqact" in line):
             continue
-        print(line)
-        pqactConf = pqactConf + (line.split()[2],)
+        #print(line)
+        if len(line.split()) >= 3:
+            newPqAtConf = os.path.expanduser(line.split()[2])
+            if not os.path.exists(newPqAtConf):
+                print(f'\tldmd_conf: EXEC "pqact" {newPqAtConf}, file does not exist!')
+            else:
+                pqactConfs = pqactConfs + (newPqAtConf,)
+        else:
+            print('Notice: No EXEC "pqact" pqact configuration file referenced in ldmd.conf\n')
 
     f.close()
-    return pqactConf
+    return pqactConfs
+
+
+def _whichPs(envVar):
+
+    whichOs      = envVar['os']
+    rel     = envVar['release']
+
+    if whichOs == "SunOS" and release.startswith(4):
+        cmd = "ps -gawxl"
+        default = 0 
+     
+    else:
+        if "BSD" in whichOs.lower():
+            cmd = "ps ajx"
+            default = 1
+
+        else:
+            userEnv = os.getenv('USER')
+            cmd = f"ps -fu {userEnv}"
+            default = 1 
+        
+    return cmd, default
+
+# ###############################################################################
+# # HUP the pqact program(s)
+# ###############################################################################
+
+def ldmadmin_pqactHUP(envVar):
+
+    status = 0
+    cmd=""
+    ps_cmd, default = _whichPs(envVar)
+
+    ps_output   = subprocess.check_output(ps_cmd, shell=True).decode()
+
+    ps_lineList = ps_output.split('\n')
+
+    pid_index = default
+    pqact_pid = -1
+    pqact_pids = ""
+
+    # search for the position (pid_index) of PID
+    for ps_line in ps_lineList:
+        if 'PPID' in ps_line:
+            ps_line_items = ps_line.split()
+            try:
+                pid_index = ps_line_items.index("PID") 
+                
+            except:
+                errmsg(f"PID position not found in ps output: {ps_line}. Weird!")
+    
+        else:
+            if 'pqact' in ps_line:
+                pqact_line_item = ps_line.split()
+                try:
+                    pqact_pid = pqact_line_item[pid_index] 
+                    pqact_pids += f" {pqact_pid}"
+                    
+                except:
+                    errmsg(f"pqact position not found in ps output: {ps_line}. Weird!")
+                
+    if pqact_pids == "":
+        errmsg("ldmadmin_pqactHUP: process not found, cannot HUP pqact\n")
+        return status
+    
+    print("Check pqact HUP with command \"ldmadmin tail\"\n")
+    kill_cmd = f"kill -HUP {pqact_pids}"
+    
+    system( kill_cmd )
+
+    return status
 
 
 if __name__ == "__main__":
@@ -652,7 +760,7 @@ if __name__ == "__main__":
     #print(isProductQueueOk())  # DONE
     #print(getPortCount(234))   # DONE
     #print(getPq(path))         # DONE
-    #printMetrics(registryDict)  # DONE
+    #printMetrics(registryDict) # DONE
 
     metrics_files = "/home/miles/projects/ldm/var/logs/metrics.txt"
 
@@ -670,5 +778,6 @@ if __name__ == "__main__":
     # print(_executeNtpDateCommand(ntpdate_cmd, 5, ntpserver))  # DONE
 
     ldmdConfPathname = "ldmd.conf"      #registryDict["ldmd_conf"]
-    print(readPqActConfFromLdmConf(ldmdConfPathname))
-    
+    print(readPqActConfFromLdmConf(ldmdConfPathname)) # DONE
+
+    ldmadmin_pqactHUP(envVarDict)   # DONE - can only test if pqact process(es) is(are) running

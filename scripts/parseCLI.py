@@ -243,7 +243,8 @@ commands:
     checkinsertion                           Checks for recent insertion of
                                                  data-product into product-queue
     vetqueuesize                             Vets the size of the product-queue
-    pqactcheck [-p pqact_conf] [conf_file]   Checks syntax of pqact(1) files
+    pqactcheck [ldmd_conf]                   Checks syntax of pqact(1) files
+    pqactcheck [-p pqact_conf]               Checks syntax of pqact(1) files
     pqactHUP                                 Sends HUP signal to pqact(1)
                                                  program
     queuecheck                               Checks for product-queue corruption

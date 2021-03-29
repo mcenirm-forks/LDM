@@ -144,35 +144,6 @@ class LDMenvironmentHandler:
             self.verbose and print(f"releaseLock(): lock NOT acquired.");
     
 
-    def isRunning(self):
-        
-        running     = -1
-        pidFilename = self.envVariables['pid_file']
-        ip_addr     = self.envVariables['ip_addr']
-
-        pid = 0
-        with open(pidFilename, 'r') as pidFile:
-            pidStr = pidFile.read().replace('\n','')
-        pid = int(pidStr)
-        
-        if psutil.pid_exists(pid):
-            running = 0
-        else:
-            #self.verbose and print(f"process with pid {pid} does not exist!")
-            
-            # The following test is incompatible with the use of a proxy
-
-            cmd_line = "echo ldmping -l- -i 0"
-            if not ip_addr == "0.0.0.0":
-                cmd_line = f"{cmd_line}  {ip_addr}"
-            
-            cmd_line = f"{cmd_line} > /dev/null 2>&1"
-            running = os.system( cmd_line )
-            
-            #self.verbose and print(f" Running status: {running}")
-
-        return running
-
 if __name__ == "__main__":
 
     os.system('clear')
