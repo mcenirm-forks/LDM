@@ -1,17 +1,18 @@
-import os
-from parseRegistry import RegistryParser
-from environHandler import LDMenvironmentHandler
-import psutil
-import time
+import  os
+from    os import path
+import  psutil
+from    filelock import Timeout, FileLock
+import  subprocess
+from    subprocess import PIPE
+import  glob
+from    pathlib import Path
+from    random import randrange
+from    uptime import uptime
+import  time
 
-import subprocess
-from subprocess import PIPE
-
-import glob
-from os import path
-from pathlib import Path
-from random import randrange
-from uptime import uptime
+import  ldmSubs
+from    parseRegistry import RegistryParser
+from    environHandler import LDMenvironmentHandler
 
 ###############################################################################
 # Helper functions: they star with _undescore_ to distinguish them from 
@@ -602,43 +603,99 @@ def readVmstat():
 
     except Exception as e:
         print(e)
-        return (contextSwitches, sysTime, userTime, idleTime, waitTime)
+        return (contextSwitches, sysTime, userTime, idleTime, waitTime) # all zeros
+
+
 #
-# Command for printing metrics:
+# print metrics to file
 def printMetrics(reg):
 
-    port        = reg["port"]
-    pq_path     = reg["pq_path"]
+    metricsFilePath = reg['metrics_file']
 
-    pq_line     = list(getPq(pq_path))
-    portCount   = list(getPortCount(reg, port))
-    load        = list(getLoad())
-    thisTime    = float(getTime())    
-    cpu         = list(getCpu(reg))
-    
-    all_metrics =  load + portCount + pq_line + cpu 
-    all_metrics.insert(0, thisTime)
-    
-    time_legend = "\ttime: \t\tYYYYmmdd.hhmmss"
-    load_legend = "\tuptime (avg at): 1 mn, 5 mn, 15 mn"
-    port_legend = "\tport (count): \tremote, local"
-    pq_legend   = "\tpq: \t\tage, prodCount, byteCount"
-    cpu_legend  = "\tCPU: \t\tuserTime, sysTime, idleTime, waitTime, memUsed, memFree, swapUsed, swapFree, contextSwitches"
+    with open(metricsFilePath, "w+") as metricsFile:
+        port        = reg["port"]
+        pq_path     = reg["pq_path"]
 
-    all_legend  = "\n   time  \t|     uptime     | port |            pq          |   CPU "
-    print(all_legend) 
-    print(all_metrics)
+        pq_line     = list(getPq(pq_path))
+        portCount   = list(getPortCount(reg, port))
+        load        = list(getLoad())
+        thisTime    = float(getTime())    
+        cpu         = list(getCpu(reg))
+        
+        all_metrics =  load + portCount + pq_line + cpu 
+        all_metrics.insert(0, thisTime)
+        
+        time_legend = "\ttime: \t\tYYYYmmdd.hhmmss"
+        load_legend = "\tuptime (avg at): 1 mn, 5 mn, 15 mn"
+        port_legend = "\tport (count): \tremote, local"
+        pq_legend   = "\tpq: \t\tage, prodCount, byteCount"
+        cpu_legend  = "\tCPU: \t\tuserTime, sysTime, idleTime, waitTime, memUsed, memFree, swapUsed, swapFree, contextSwitches"
 
-    # print the legend:
-    print(f"\nLegend:\n{time_legend}\n{load_legend}\n{port_legend}\n{pq_legend}\n{cpu_legend}\n")
+        all_legend  = "\n   time  \t|     uptime     | port |            pq          |   CPU "
+        print(all_legend,   file=metricsFile) 
+        print(all_metrics,  file=metricsFile)
+
+        # print the legend to the metricsFilePath
+        print(f"\nLegend:\n{time_legend}\n{load_legend}\n{port_legend}\n{pq_legend}\n{cpu_legend}\n", file=metricsFile)
+
+
+
+def addMetrics(reg):
+
+    status          = 0
+    metricsFilename = reg['metrics_file']
+
+    if not _doesFileExist(metricsFilename):
+        errmsg("addMetrics(): Cannot create/open metrics-file '{metricsFilename}'\n")
+        status  = 1
+        return status
+
+    fileToLock  = f"{metricsFilename}.lock"
+    lock        = FileLock(fileToLock)
+
+    try:
+        lock.acquire(timeout=20)
+        #print("Lock acquired.")
+    except:
+        print(f"\nLock already acquired: lockID: {lock}\n")
+        errmsg(f"addmetrics(): Couldn't lock metrics-file '{metricsFilename}'. \
+                \nAnother 'ldmadmin addmetrics' is likely running.")
+        status  = 2
+        return status
+
+    # print metrics to file
+    printMetrics(reg, metricsFilename)
+
+
+    try:
+        lock.release()
+    except Timeout:
+        print(f"releaseLock(): Could not release lock on '{fileToLock}'! \
+            \n(Manually delete it.)")
+        status  = 3
+        return status
 
 
 #
 # Command for plotting metrics: TO TEST!!!!!!!!!!!!!!!!!!!!!!!!!
-def plotMetrics(begin, end, metrics_file):
+def plotMetrics(env):
 
+    begin = env['begin']
+    end = env['env']
+    begin = env['metrics_files']
+    
     plot_cmd = f"plotMetrics -b {begin} -e {end} {metrics_files}"
+    
     return os.system(plot_cmd)
+
+def newMetrics(reg):
+
+    metricsFile     = reg['metrics_file']
+    numMetrics      = reg['nums_metrics']
+
+    return ldmSubs.newLog(metricsFile, numMetrics)
+
+
 
 def readPqActConfFromLdmConf(ldmdConfPathname):
 
@@ -663,7 +720,7 @@ def readPqActConfFromLdmConf(ldmdConfPathname):
 
 def _whichPs(envVar):
 
-    whichOs      = envVar['os']
+    whichOs = envVar['os']
     rel     = envVar['release']
 
     if whichOs == "SunOS" and release.startswith(4):
@@ -732,9 +789,36 @@ def ldmadmin_pqactHUP(envVar):
     return status
 
 
+def copyCliArgsToEnvVariable(envVar, cliDico):
+
+    mapArgsToNames = {
+            'm': 'max_latency', 
+            'M': 'max_clients',
+            'q': 'pq_path',
+            'o': 'time_server_offset',
+            'conf_file': 'ldmd_conf',
+            'v': 'verbose',
+            'x': 'debug',
+            'f': 'f',           # concerns both : force and feedset but they are disjoint (2 different commands)
+            'c': 'c',
+            'n': 'num_logs',
+            'l': 'log_file',
+            'b': 'b',
+            'e': 'e',
+            "pqact_conf_option":    "pqact_conf_option",
+            "pqact_conf": "pqact_conf"
+
+    }
+    for key,val in cliDico.items():
+        print(key, val)
+        mappedAttribute = mapArgsToNames[key]
+        envVar[mappedAttribute] = val
+
+
+
 if __name__ == "__main__":
 
-    os.system('clear')
+    #os.system('clear')
 
     regHandler = RegistryParser()
     envHandler = LDMenvironmentHandler()
@@ -742,8 +826,8 @@ if __name__ == "__main__":
     registryDict = regHandler.getRegistryEntries()
     envVarDict = envHandler.getEnvVarsDict()
     
-#    envHandler.prettyPrintEnvVars()
-#    regHandler.prettyPrintRegistry()
+    envHandler.prettyPrintEnvVars()
+    regHandler.prettyPrintRegistry()
 
     #print(_get_date()) DONE
 
@@ -772,12 +856,19 @@ if __name__ == "__main__":
 
     #print(readVmstat())        # DONE
     
-    #readMem()                  # DONE not used
+    # readMem()                  # DONE not used
     # ntpdate_cmd = registryDict["ntpdate_command"]
     # ntpserver = "0.us.pool.ntp.org"
     # print(_executeNtpDateCommand(ntpdate_cmd, 5, ntpserver))  # DONE
 
     ldmdConfPathname = "ldmd.conf"      #registryDict["ldmd_conf"]
-    print(readPqActConfFromLdmConf(ldmdConfPathname)) # DONE
+    #print(readPqActConfFromLdmConf(ldmdConfPathname)) # DONE
 
-    ldmadmin_pqactHUP(envVarDict)   # DONE - can only test if pqact process(es) is(are) running
+    #ldmadmin_pqactHUP(envVarDict)   # DONE - can only test if pqact process(es) is(are) running
+    #expression = readMem()
+
+    eval("readMem()")
+    begin = 20000
+    end = 30000
+    metrics_file = "toto.txt"
+    eval("plotMetrics(begin, end, metrics_file, envVarDict)")

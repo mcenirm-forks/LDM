@@ -148,7 +148,7 @@ class CLIParser:
 
         if cmd == "watch":
             self.cliParser.add_argument('-f feedset', action="store", dest='f', default='ANY',  help='', metavar='', required=False)
-            self.cliParser.add_argument('-p pattern', action="store", dest='p', default='.*',   help='', metavar='', required=False)
+            # NOT USED: self.cliParser.add_argument('-p pattern', action="store", dest='t', default='.*',   help='', metavar='', required=False)
 
         if cmd == "newlog":                                                        # begin: YYYYMMDD[.hh[mm[ss]]]
             self.cliParser.add_argument('-b begin', action="store", dest='b', default=19700101, type=float, help='', metavar='', required=False)
@@ -163,14 +163,12 @@ class CLIParser:
         cliDico.pop(cmd)    # remove cmd from dico
         if len(config_file_argList) == 1:
             cliDico['conf_file'] = config_file_argList[0]
-        
-        #print(f"\n\targs dico: {cliDico}\n")
 
         return cliDico 
         
 
-    def buildCLIcommand(self, cmd, namespaceDict):
-        fullCommand=f"{cmd} "
+    def buildCLIcortege(self, cmd, namespaceDict):
+        cortege = ""
 
         add_v = 1
         add_x = 0
@@ -201,21 +199,24 @@ class CLIParser:
                     continue
 
                 if key == "conf_file":
-                    fullCommand += f"{val} "                    
+                    cortege += f"{val} "                    
                     continue
 
-                fullCommand += f"-{key} {val} "
+                cortege += f"-{key} {val} "
         
         if add_v == 0 and add_x == 1:
-            # option -x goes along with -v, add -v
-            fullCommand += f"-v"
+            # option -x goes along with -v, threfore add -v
+            namespaceDict['v'] = True
+            namespaceDict['x'] = True
+
+            cortege += f" -v"
         
         # add to CLIdico: pqact_conf_option and its value
         namespaceDict['pqact_conf_option'] = pqact_conf_option
         namespaceDict['pqact_conf'] = pqact_conf
         
         #print(namespaceDict)
-        return fullCommand
+        return cortege
 
 
 
@@ -248,7 +249,7 @@ commands:
     pqactHUP                                 Sends HUP signal to pqact(1)
                                                  program
     queuecheck                               Checks for product-queue corruption
-    watch [-f feedset] [-p pattern]          Monitors incoming products
+    watch [-f feedset]                       Monitors incoming products
     config                                   Prints LDM configuration
     log                                      Pages through the LDM log file
     tail                                     Monitors the LDM log file
@@ -268,7 +269,6 @@ options:
     -e end          End time as YYYYMMDD[.hh[mm[ss]]]
     -f              Create queue "fast"
     -f feedset      Feed-set to use with command. Default: ANY
-    -p pattern
     -l logfile      Pathname of logfile. Default: $LDMHOME/ldm/var/logs/ldmd.log
     -m maxLatency   Conditional data-request temporal-offset
     -M max_clients  Maximum number of active clients

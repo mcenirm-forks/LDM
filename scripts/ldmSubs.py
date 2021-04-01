@@ -7,6 +7,7 @@ import os
 from parseRegistry import RegistryParser
 from environHandler import LDMenvironmentHandler
 import psutil
+import shutil
 import time
 
 import subprocess
@@ -84,40 +85,44 @@ def ldmConfig(reg, env):
 
 
 def grow(pq_path, newQueuePath): 
-    status = 1                    # failure default
+
+    status          = 1                    # failure default
+    oldQueuePath    = pq_path
 
     print("Copying products from old queue to new queue...\n")
-    pqcopy_cmd = f"pqcopy {pq_path} {newQueuePath}"
+    pqcopy_cmd = f"pqcopy {oldQueuePath} {newQueuePath}"
     if os.system(pqcopy_cmd):
         errmsg("grow(): Couldn't copy products")
-        return status
-    
-    print("Renaming old queue\n")
-    pqmvf_cmd = f"mv -f {oldQueuePath} {oldQueuePath}.old"
-    if os.system(pqmvf_cmd):
-        errmsg("grow(): Couldn't rename old queue")
-        return status
-    
-    print("Renaming new queue\n")
-    pqmv_cmd = f"mv {newQueuePath} {oldQueuePath}"
-    if os.system(pqmv_cmd):
-        errmsg("grow(): Couldn't rename new queue")
-        return status
 
-    print("Deleting old queue\n")
-    pqunlink_cmd = f"unlink {oldQueuePath}.old"
-    if os.system(pqunlink_cmd) != 1:   # check this system return!
-        errmsg("grow(): Couldn't delete old queue")
-        return status
-                               
-    print("Restoring old queue\n")
-    pqmvf_cmd = f"mv -f {oldQueuePath}.old {oldQueuePath}"
-    if os.system(pqmvf_cmd):
-        errmsg("grow(): Couldn't restore old queue")
-        status = 1
-        return status
+    else:
+        print("Renaming old queue\n")
+        oldQueuePath_old = f"{oldQueuePath}.old"
 
-    status = 0                     
+        if os.rename(oldQueuePath, oldQueuePath_old) != 0:  # check / confirm this return status
+            errmsg("grow(): Couldn't rename old queue")
+
+        else:
+            print("Renaming new queue\n")
+            if os.rename(newQueuePath, oldQueuePath) != 0:
+                errmsg("grow(): Couldn't rename new queue")
+
+            else:
+                print("Deleting old queue\n")
+                oldQueuePath_old =  f"{oldQueuePath}.old"
+    
+                if os.remove(oldQueuePath_old) != 0:
+                    errmsg("grow(): Couldn't delete old queue")
+
+                else:
+                    status = 0
+
+            
+            if status != 0:
+                print("Restoring old queue\n")
+                oldQueuePath_old =  f"{oldQueuePath}.old"
+                if os.rename(oldQueuePath_old, oldQueuePath) != 0:
+                    errmsg("grow(): Couldn't restore old queue")
+
     return status
 
 
@@ -406,22 +411,22 @@ def check_insertion(reg):
 
 ###############################################################################
 # rotate the specified log file, keeping 'numlog' files
+# may apply to eith ldmd log or metrics log
 ###############################################################################
 
-def newLog(reg):
+def newLog(logFile, numLogs):
 
     status = 1      # default failure
 
     # Rotate the log file
-    log_file = reg['log_file']
-    num_logs = reg['num_logs']
-    newlog_cmd = f"newlog {log_file} {num_logs}"
+
+    newlog_cmd = f"newlog {logFile} {numLogs}"
     status = os.system(newlog_cmd)
 
     if status != 0:
         errmsg("new_log(): log rotation failed")
     else:
-        # Refresh logging
+        # Refresh logging: is a refresh ok for metrics log too??
         refresh_logging_cmd = f"refresh_logging"
         status = os.system(refresh_logging_cmd)
         if status != 0:
@@ -480,6 +485,25 @@ def checkLdm(envVar):
                 else:
                     status = 0
 
+    return status
+
+# monitor incoming products
+def watch(reg, env):
+
+
+    feedset = env["f"]  # f: feedset
+    #pattern = env["pattern"]    # Not used in ldmadmin.pl
+    pq_path    = reg["pq_path"]
+
+    if not isRunning(reg, env, True):
+        errmsg("There is no LDM server running")
+        status = 1
+    
+    else:
+        pqutil_cmd = f'pqutil -r -f "{feedset}" -w {pq_path}'
+        print(pqutil_cmd)
+        status = os.system(pqutil_cmd)
+        
     return status
 
 
@@ -681,7 +705,7 @@ def start(reg, envVar):
     max_latency = reg["max_latency"]
     offset      = reg["server_time_offset"]
     pq_path     = reg["pq_path"]
-    pid_file    = envVarDict["pid_file"]
+    pid_file    = envVar["pid_file"]
 
     # Build the 'ldmd' command line
     ldmd_cmd = f"ldmd -I {ip_addr} -P {port} -M {max_clients} -m {max_latency} -o {offset} -q {pq_path}"
@@ -775,24 +799,37 @@ def start_ldm(reg, envVar):
 
     # Rotate the ldm log files if appropriate
     log_file = reg["log_file"]
-    log_rot_cmd = f"mkdir -p `dirname {log_file}`"
-    log_rotate_cmd_status = os.system(log_rot_cmd)
+    num_logs = reg["num_logs"]
 
-    if log_rotate_cmd_status == 0:  # 1 or 0
-        print("start_ldm(): 4. Rotating log files...\n")
-        if newLog(reg):
-            errmsg("\nstart_ldm(): Couldn't rotate log files")
-            status = 1
-            return status
-
-    if 0 == status:
-        # Reset queue metrics
-        os.system("pqutil -C")
-        status = start(reg, envVar)
+    dirname  = os.path.dirname(log_file)
+    os.mkdirs(dirname, exists_ok = True)    # silent if exists
+        
+    # Reset queue metrics
+    os.system("pqutil -C")
+    status = start(reg, envVar)
 
     return status
 
 
+def restart(reg, envVar):   # restart the ldm
+
+    # These var. are in envVar
+    #   ldmd_conf 
+    #   q_path
+    #   verbose
+    #   debug++, $verbose++
+    #   max_clients
+    #   max_latency
+    #   offset
+    #   q_path;
+    
+    # lock acquired
+    status = stop_ldm(reg, envVar)
+    if status == 0:
+        status = start_ldm(reg, envVar)
+    
+    # lock release    
+    return status
 
 ###############################################################################
 # stop the LDM server
@@ -993,6 +1030,19 @@ def getQueueStatus(queue_path, name):       # name e.g. "surf"
     return status
 
 
+# check queue for corruption
+def queueCheck(reg, env):
+    
+    if isRunning(reg, env):     #$pid_file, $ip_addr)) {
+        errmsg("queuecheck: The LDM system is running. queuecheck aborted")
+        status = 1
+    
+    else:
+        status = not isProductQueueOk(reg, env)
+    
+    return status
+
+
 # Resets the LDM registry.
 #
 # Returns:
@@ -1156,6 +1206,72 @@ def isSurfQueueOk(reg):
     return status == 0
 
 
+# page the logfile
+def pageLog(reg):
+
+    status      = 1
+    pager_cmd   = os.getenv['PAGER']
+    logFile     = reg['log_file']
+
+    if pager_cmd == None:
+        pager_cmd = "more"
+    
+    pager_cmd += f" {logFile}"
+    status  = os.system(pager_cmd)
+    
+    return status
+
+
+# do a "tail -f" on the logfile
+def tailLog(reg):
+
+    logFile     = reg['log_file']
+    tail_cmd    = f"tail -f {logFile}"
+    status      = os.system(tail_cmd)
+    return status
+
+
+ # clean up after an abnormal termination
+def clean(reg, env): 
+
+    status = 0
+    if isRunning(reg, env):
+        errmsg("The LDM system is running!  Stop it first.")
+        status = 1
+        return status
+    
+    pidFile = reg['pid_file']
+    
+    if _doesFileExist(pidFile): 
+
+        try:
+            os.unlink(pidFile) 
+        except: 
+            errmsg(f"Couldn't remove LDM server PID-file '{pidFile}'")
+            status = 3
+            return status
+
+    else:
+        errmsg(f"pid file {pidFile} does not exist!")
+        status = 0
+        return status
+
+    # here, successfully removed pidFile: proceed
+    ldmHome = env['ldmhome']
+    remove_cmd = f"rm -f {ldmHome}/MldmRpc_*"
+
+    status = os.system(remove_cmd)
+    
+    return status
+
+
+def updateGemPakTables():
+
+    status = os.system("updateGempakTables")
+    
+    return status
+
+
 ###############################################################################
 # Check the queue-files for errors
 ###############################################################################
@@ -1197,7 +1313,7 @@ if __name__ == "__main__":
     regHandler.prettyPrintRegistry()
 
     # new log rotation: TO-CHECK
-    # newLog(registryDict)
+    # newLog(logFile, numLogs)
 
     # LDM stop: DONE
     # stop_ldm(registryDict, envVarDict)

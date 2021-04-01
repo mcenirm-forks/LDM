@@ -47,6 +47,8 @@ from time 	import sleep
 import parseCLI 		as parseCli
 import parseRegistry 	as regHdler
 import environHandler	as envHdler
+import ldmSubs			as sub
+import ldmUtils			as util
 
 # from parseRegistry import RegistryParser
 # from environHandler import LDMenvironmentHandler
@@ -90,30 +92,72 @@ class LDMCommandsHandler:
 		regH.prettyPrintRegistry()
 
 
-	def execute(self, cmdToExecute, toLockOrNot, envt):
-		status = 0
+	def cmdDispatcher(self, cmd, reg, env):
+
+		ldmCommandsDict={
+	    	"start": 				"sub.start_ldm(reg, env)",
+	    	"stop":					"sub.stop_ldm(reg, env)",
+	        "restart": 				"sub.restart(reg, env)",
+	        "mkqueue":				"sub.mkqueue(reg, env)",
+	        "delqueue":				"sub.delqueue(reg, env)",
+	        "mksurfqueue":			"sub.mksurfqueue(reg, env)",
+	        "delsurfqueue":			"sub.delsurfqueue(reg, env)",
+	        "newlog":				"sub.newlog(reg, env)",
+	        "scour":				"sub.scour(reg, env)",
+	        "isrunning":			"sub.isRunning(reg, env, pingFlag)",
+	        "checkinsertion": 		"sub.check_insertion(reg)",
+	        "vetqueuesize":			"sub.vetQueueSize(reg, env)",
+	        "check":				"sub.checkLdm(reg, env)",
+	        "watch":				"sub.watch(reg, env)",
+	        "pqactcheck":			"sub.pqactcheck(reg, env)",
+	        "pqactHUP":				"sub.pqactHUP(reg, env)",
+	        "queuecheck":			"sub.queueCheck(reg, env)",	        
+	        "config":				"sub.ldmConfig(reg, env)",
+	        "log":					"sub.pageLog(reg)",
+	        "tail":					"sub.tailLog(reg)",
+	        "clean":				"sub.clean(reg, env)", 
+	        "checktime":			"sub.checkTime(reg, env)",
+	        "printmetrics":			"util.printMetrics(reg)",
+	        "addmetrics":			"util.addMetrics(reg)",
+	        "plotmetrics":			"util.plotMetrics(reg, env)",
+	        "newmetrics":			"util.newMetrics(reg)",
+	        "updategempaktables": 	"sub.updateGempakTables()"
+    	}
+
+		pingFlag 			= True
+
+		runCmd = ldmCommandsDict[cmd]
 		
-		envVar 				= envt.getEnvVarsDict()
+		#eval("sub.stop_ldm(reg, env)")
+		eval(ldmCommandsDict[cmd])
+
+
+
+	# cortege not needed here. move its values (begin, end, etc.) to envVar
+	def execute(self, cmd, reg, envVar, envt):
+
+		status 				= 0
 		pqact_conf_option 	= envVar['pqact_conf_option']
 		#pqact_conf 		= envVar['pqact_conf']
 
+		toLockOrNot 		= parseCli.CLIParser().isLockingRequired(cmd)
+		cmdToExecute = f"{cmd} " # {cortege}"
 		if toLockOrNot == True:
 			if envt.getLock() == -1:
 				print(f"Could not get lock for '{cmdToExecute}' to execute properly!")
 				status = -1
 				return status
 
-			print(f"\nExecuting in locked mode : \n\n\t{cmdToExecute}\n")
+			print(f"\nExecuting in locked mode : \t{cmdToExecute}\n")
 			cmdToExecute = f"{cmdToExecute}, lock=True, pqact_conf_option={pqact_conf_option}"
-			print(f"\nExecuting in locked mode : \n\n\t{cmdToExecute}\n")
-			
+
+			self.cmdDispatcher(cmd, reg, envVar)
 			envt.releaseLock()
 
 		else:
 			print(f"\nExecuting in NON locked mode : \n\n\t{cmdToExecute}\n")
 			cmdToExecute = f"{cmdToExecute}, lock=False, pqact_conf_option={pqact_conf_option}"
-			print(f"\nExecuting in NON locked mode : \n\n\t{cmdToExecute}\n")
-			
+			self.cmdDispatcher(cmd, reg, envVar)
 
 		return status
 
@@ -134,7 +178,7 @@ def main():
 	readline.parse_and_bind("tab: complete")
 	cliInst 		= parseCli.CLIParser()				# instance of CLIParser
 	cmdsDico 		= cliInst.getFullCommandsDict()
-	
+		
 	LDMcommands 	= LDMCommandsHandler( cmdsDico )	# instance of 'this'
 	
 	
@@ -159,8 +203,7 @@ def main():
 
 # Non-interactive mode (CLI mode)
 		cmd=sys.argv[1]
-		lockOrNotFlag 	= cliInst.isLockingRequired(cmd)
-		
+
 		if not LDMcommands.isValidCmd(cmd):
 			print(f"\n\tInvalid ldmadmin command: {cmd}\n")
 			sleep(3)
@@ -173,57 +216,61 @@ def main():
 
 		
 		# if  nbArguments == 2: # command w/o options
-		# 	status 			= LDMcommands.execute(cmd, lockOrNotFlag, envt)
+		# 	status 			= LDMcommands.execute(cmd, envt)
 		# else:	
-		cliDico 					= cliInst.cliParserAddArguments(cmd)
-		#debug and print(f"\n\nCLI dict: {cliDico}\n")
 
-		cliString 					= cliInst.buildCLIcommand(cmd, cliDico)
-		envVar = envt.getEnvVarsDict()
-		envVar['pqact_conf_option'] = cliDico['pqact_conf_option']
-		envVar['pqact_conf'] 		= cliDico['pqact_conf']
-		#print(cliString)
+
+		cliDico 	= cliInst.cliParserAddArguments(cmd)
+		cliCortege 	= cliInst.buildCLIcortege(cmd, cliDico) # cortege is not needed, the call is.
+		#print(f"\n\nCLI dict: {cliDico}\n")
 		
-		status 						= LDMcommands.execute(cliString, lockOrNotFlag, envt)
+		# Copy the cli arguments to envVar to make them available at execution time
+		envVar  	= envt.getEnvVarsDict()
+		util.copyCliArgsToEnvVariable(envVar, cliDico)
 
+		print("\n---------------- envVar ----------\n")
+		print(envVar)
+		
+		status 						= LDMcommands.execute(cmd, regDico, envVar, envt)
 
 		# last line:
 		exitMessage()
 
-# Interactive mode
-	if None:
-		cmd = input('ldmadmin> ')
-		while not cmd == "quit":
+# Interactive mode ###################################################################
+
+	# if None:
+	# 	cmd = input('ldmadmin> ')
+	# 	while not cmd == "quit":
 			
-			cmd=cmd.strip()
-			if cmd == "usage": 
-				cliInst.usage()
+	# 		cmd=cmd.strip()
+	# 		if cmd == "usage": 
+	# 			cliInst.usage()
 
 
-			if cmd == "quit":
-				exitMessage()
+	# 		if cmd == "quit":
+	# 			exitMessage()
 
-			if not LDMcommands.isValidCmd(cmd):
-				print(f"Invalid ldmadmin command: {cmd}\n")
-				cmd = input('ldmadmin> ')
-				continue
+	# 		if not LDMcommands.isValidCmd(cmd):
+	# 			print(f"Invalid ldmadmin command: {cmd}\n")
+	# 			cmd = input('ldmadmin> ')
+	# 			continue
 
-			# Here, cmd is a valid ldmadmin command:
-			print(f"{cmd} ---> {LDMcommands.returnCmdCortege(cmd)}")
+	# 		# Here, cmd is a valid ldmadmin command:
+	# 		print(f"{cmd} ---> {LDMcommands.returnCmdCortege(cmd)}")
 
-			# namespace = cliInst.cliParserAddArguments(cmd)
-			# #print(f"\n\tnamespace: {namespace}\n")
+	# 		# namespace = cliInst.cliParserAddArguments(cmd)
+	# 		# #print(f"\n\tnamespace: {namespace}\n")
 
-			# cliString = cliInst.buildCLIcommand(cmd, namespace)
-			# status = LDMcommands.execute(cmd, cliString, envt)
-
-
-
-			# last line:
-			cmd = input('ldmadmin> ')
+	# 		# cliCortege = cliInst.buildCLIcommand(cmd, namespace)
+	# 		# status = LDMcommands.execute(cmd, cliCortege, envt)
 
 
-	exitMessage()
+
+	# 		# last line:
+	# 		cmd = input('ldmadmin> ')
+
+
+	# exitMessage()
 
 if __name__ == '__main__':
 
