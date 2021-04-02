@@ -98,37 +98,34 @@ class LDMCommandsHandler:
 	    	"start": 				"sub.start_ldm(reg, env)",
 	    	"stop":					"sub.stop_ldm(reg, env)",
 	        "restart": 				"sub.restart(reg, env)",
-	        "mkqueue":				"sub.mkqueue(reg, env)",
-	        "delqueue":				"sub.delqueue(reg, env)",
-	        "mksurfqueue":			"sub.mksurfqueue(reg, env)",
-	        "delsurfqueue":			"sub.delsurfqueue(reg, env)",
-	        "newlog":				"sub.newlog(reg, env)",
-	        "scour":				"sub.scour(reg, env)",
+	        "mkqueue":				"sub.make_pq(reg, env)",
+	        "delqueue":				"sub.del_pq(reg, env)",
+	        "mksurfqueue":			"sub.make_surf_q(reg, env)",
+	        "delsurfqueue":			"sub.del_surf_pq(reg, env)",
+	        "newlog":				"sub.newLog(reg, env)",
+	        "scour":				"sub.scour(reg)",
 	        "isrunning":			"sub.isRunning(reg, env, pingFlag)",
 	        "checkinsertion": 		"sub.check_insertion(reg)",
 	        "vetqueuesize":			"sub.vetQueueSize(reg, env)",
 	        "check":				"sub.checkLdm(reg, env)",
 	        "watch":				"sub.watch(reg, env)",
 	        "pqactcheck":			"sub.pqactcheck(reg, env)",
-	        "pqactHUP":				"sub.pqactHUP(reg, env)",
+	        "pqactHUP":				"util.pqactHUP(reg, env)",
 	        "queuecheck":			"sub.queueCheck(reg, env)",	        
 	        "config":				"sub.ldmConfig(reg, env)",
 	        "log":					"sub.pageLog(reg)",
 	        "tail":					"sub.tailLog(reg)",
 	        "clean":				"sub.clean(reg, env)", 
-	        "checktime":			"sub.checkTime(reg, env)",
+	        "checktime":			"sub.checkTime(reg)",
 	        "printmetrics":			"util.printMetrics(reg)",
 	        "addmetrics":			"util.addMetrics(reg)",
-	        "plotmetrics":			"util.plotMetrics(reg, env)",
+	        "plotmetrics":			"util.plotMetrics(env)",
 	        "newmetrics":			"util.newMetrics(reg)",
 	        "updategempaktables": 	"sub.updateGempakTables()"
     	}
 
-		pingFlag 			= True
+		pingFlag = True
 
-		runCmd = ldmCommandsDict[cmd]
-		
-		#eval("sub.stop_ldm(reg, env)")
 		eval(ldmCommandsDict[cmd])
 
 
@@ -148,14 +145,14 @@ class LDMCommandsHandler:
 				status = -1
 				return status
 
-			print(f"\nExecuting in locked mode : \t{cmdToExecute}\n")
+			#print(f"\nExecuting in locked mode : \t{cmdToExecute}\n")
 			cmdToExecute = f"{cmdToExecute}, lock=True, pqact_conf_option={pqact_conf_option}"
 
 			self.cmdDispatcher(cmd, reg, envVar)
 			envt.releaseLock()
 
 		else:
-			print(f"\nExecuting in NON locked mode : \n\n\t{cmdToExecute}\n")
+			#print(f"\nExecuting in NON locked mode : \n\n\t{cmdToExecute}\n")
 			cmdToExecute = f"{cmdToExecute}, lock=False, pqact_conf_option={pqact_conf_option}"
 			self.cmdDispatcher(cmd, reg, envVar)
 

@@ -254,11 +254,12 @@ def vetQueueSize(reg, envVar):
 
     print("\n\t>> vetQueueSize()\n")
     status      = 2          # default major failure
+
     pid_file    = envVar["pid_file"] 
     ip_addr     = reg["ip_addr"]
-    max_latency = int(reg["max_latency"])
-    etime       = getElapsedTimeOfServer(reg, envVar)
+    max_latency = envVar["max_latency"]
 
+    etime       = getElapsedTimeOfServer(reg, envVar)
     if etime < max_latency:
         status = 0                    # too soon to tell
         return status
@@ -284,33 +285,23 @@ def vetQueueSize(reg, envVar):
 
     # A- No reconciliation needed
     ##############################
-    if 0:
-        if isFull == 0 or minVirtResTime < 0 or minVirtResTime >= max_latency or mvrtSize <= 0 or mvrtSlots <= 0:
-            status = 0
-            print("    # A- No reconciliation needed")
-            return status
-
+    if isFull == 0 or minVirtResTime < 0 or minVirtResTime >= max_latency or mvrtSize <= 0 or mvrtSlots <= 0:
+        status = 0
+        print("    # A- No reconciliation needed")
+        return status
 
     # B- Reconciliation needed
     ##########################
     print("    # B- Reconciliation needed")
 
-    max_latency         = reg["max_latency"]
     reconMode           = reg["reconMode"]
-    
+    # print(f'\nINFO: The value of the registry parameter "RECONCILIATION_MODE" is "{reconMode}"\n')
     error_msg = f"vetQueueSize(): The maximum acceptable latency \
         \n(registry parameter 'MAX_LATENCY': {max_latency} seconds) is greater \
         \nthan the observed minimum virtual residence time of \
         \ndata-products in the queue ({minVirtResTime} seconds).  \
         \nThis will hinder detection of duplicate data-products."
     errmsg(error_msg)
-
-    print(f'\nINFO: The value of the registry parameter "RECONCILIATION_MODE" is "{reconMode}"\n')
-
-    reconMode = "increase queue"
-#    reconMode = "decrease maximum latency"
-#    reconMode = "do nothing"
-    print(f"For testing purposes: set reconMode == {reconMode}")
     
     #1.
     if reconMode == "increase queue":
@@ -324,7 +315,7 @@ def vetQueueSize(reg, envVar):
     if reconMode == "do nothing":
         return _doNothing(pqMonElements)
 
-    #4. else
+    #4.
     errmsg(f"Unknown reconciliation mode: '{reconMode}'")
     status = 2        # major failure
     return status
@@ -414,9 +405,12 @@ def check_insertion(reg):
 # may apply to eith ldmd log or metrics log
 ###############################################################################
 
-def newLog(logFile, numLogs):
+def newLog(reg, env):
 
-    status = 1      # default failure
+    status      = 1      # default failure
+
+    logfile     = envVar['log_file']
+    numLogs     = envVar['num_logs']
 
     # Rotate the log file
 
@@ -456,7 +450,7 @@ def removeOldProdInfoFiles(env, pid_file):
 # Check the LDM system.
 ###############################################################################
 
-def checkLdm(envVar):
+def checkLdm(reg, envVar):
 
     status   = 0
     pid_file = envVar['pid_file']
@@ -487,13 +481,13 @@ def checkLdm(envVar):
 
     return status
 
+
 # monitor incoming products
 def watch(reg, env):
 
 
-    feedset = env["f"]  # f: feedset
-    #pattern = env["pattern"]    # Not used in ldmadmin.pl
-    pq_path    = reg["pq_path"]
+    feedset = env["feedset"]  # f: feedset
+    pq_path = env["pq_path"]
 
     if not isRunning(reg, env, True):
         errmsg("There is no LDM server running")
@@ -599,13 +593,21 @@ def checkTime(reg):
 
 
 
+    pq_size     = reg['pq_size']    # This does not change from registry
+    debug       = envVar['debug']   # Boolean
+    verbose     = envVar['verbose'] # Boolean
+    pq_clobber  = envVar['c']       # Boolean
+    pq_fast     = envVar['fast']    # Boolean
+    pq_slots    = envVar['pq_slots']    # This CAN change from registry
+
+
+
 ###############################################################################
-# Deletes a product-queue
+# Deletes a queue
 ###############################################################################
 
-def deleteQueue(reg, envVar):
+def deleteAQueue(reg, envVar, queuePath, queueName):
 
-    queuePath   = reg['pq_path']
     status      = 1     # default failure
 
     # Check to see if the server is running.
@@ -616,7 +618,7 @@ def deleteQueue(reg, envVar):
     
     # Check if queue exists
     if not _doesFileExist(queuePath):
-        errmsg("deleteQueue(): Product-queue '{queuePath}' doesn't exist");
+        errmsg(f"deleteQueue(): {queueName}-queue '{queuePath}' doesn't exist");
         status = 0
         return status
     
@@ -625,67 +627,110 @@ def deleteQueue(reg, envVar):
         os.unlink(queuePath)
         status = 0
     except:
-        errmsg("deleteQueue(): Couldn't delete product-queue:  '{queuePath}' ") #$!");
+        errmsg(f"deleteQueue(): Couldn't delete {queueName}-queue:  '{queuePath}'")
         
     return status
 
 
 ###############################################################################
-# create a pqsurf product queue
+# Deletes a product-queue
 ###############################################################################
 
-def make_surf_pq(reg):
+def del_pq(reg, envVar):
 
-    status = 1                     # default failure
+    queuePath   = reg['pq_path']
+    return deleteAQueue(reg, envVar, "product")
 
-    q_size = reg['surf_size_option']
-    if not q_size == None:
-        errmsg("product queue -s flag not supported, no action taken.");
+
+###############################################################################
+# Deletes a surf-queue
+###############################################################################
+
+def del_surf_pq(reg, envVar):
+
+    queuePath   = reg['surf_path']
+    return deleteAQueue(reg, envVar, "surf")
+
+
+###############################################################################
+# create a queue: common to both pq and surf
+###############################################################################
+
+def callQueueCreate(q_size, q_slots, clobber, verbose, debug, fast, q_path):
+
+
+    status      = 1     # default failure
+
+    diskOk      = True
+    debug_opt   = verbose_opt = fast_opt = clobber_opt = ""
+
+    if debug:
+        debug_opt   = " -x" 
+    if verbose:
+        verbose_opt = " -v" 
+    if fast:
+        fast_opt    = " -f"
+        diskOk = util.checkDiskSpace()   # shall return False if not enough space on disk
+    if clobber:
+        clobber_opt = " -c"
+    
+    # Build the command line
+    q_cmd = f"pqcreate {debug_opt} {verbose_opt} {fast_opt} {clobber_opt} -S {q_slots}  -q {q_path} -s {q_size} "
+    
+    if fast and not diskOk:
+        errmsg(f"mkqueue(1): there is NOT enough space to make a queue of size {q_size}. ")
         return status
-
-    # can't do this while there is a server running
-    if isRunning(reg, envVar, True):
-        errmsg("make_surf_pq(): There is a server running, mkqueue (surf) aborted")
-        return status
-        
-    #=================================
-
-    # need the number of slots to create
-    surf_slots  = int(surf_size / 1000000 * 6881)
-    surf_path   = reg['surf_path']
-    surf_size   = reg['surf_size']
-
-    # build the command line
-    # The command line is already built at this point in the CLIparser
-
-    # For testing purpose:
-    cmd_line = "pqcreate"
-
-    # if ($debug) {
-    #     $cmd_line .= " -x";
-    # }
-    # if ($verbose) {
-    #     $cmd_line .= " -v";
-    # }
-
-    # if ($pq_clobber) {
-    #     $cmd_line .= " -c";
-    # }
-
-    # if ($pq_fast) {
-    #     $cmd_line .= " -f";
-    # }
-    cmd_line = f"{cmd_line} -x -v -c -f -S {surf_slots} -q {surf_path} -s {surf_size}"
-    #$cmd_line .= " -S $surf_slots -q $surf_path -s $surf_size";
-
-    # execute pqcreate
-    if os.system(cmd_line): 
-        errmsg("make_surf_pq(): pqcreate(1) failure")
+    
+    # execute pqcreate(1)
+    if os.system(q_cmd):
+        errmsg("queueCreate failed")
         return status
     
     status = 0
 
     return status
+
+###############################################################################
+# create a product queue
+###############################################################################
+
+def make_pq(reg, envVar):
+
+    # need the number of slots to create
+    pq_size     = reg['pq_size']          # This does not change from registry
+    pq_slots    = reg['pq_slots']    # This does not change from registry
+    if pq_slots == "default":
+        pq_slots= int(pq_size / 1000000 * 6881)
+
+    debug       = envVar['debug']       # Boolean
+    verbose     = envVar['verbose']     # Boolean
+    pq_clobber  = envVar['clobber']     # Boolean
+    pq_fast     = envVar['fast']        # Boolean
+    pq_path     = envVar['pq_path']     # This CAN change from registry
+
+    return callQueueCreate(pq_size, pq_slots, pq_clobber, verbose, debug, pq_fast, pq_path)
+
+
+###############################################################################
+# create a pq_surf queue
+###############################################################################
+
+def make_surf_pq(reg, envVar):
+
+    # need the number of slots to create
+    sq_size     = reg['surf_size']          # This does not change from registry
+    sq_slots    = reg['pq_slots']    # This does not change from registry
+    if sq_slots == "default":
+        sq_slots= int(sq_size / 1000000 * 6881)
+
+    debug       = envVar['debug']       # Boolean
+    verbose     = envVar['verbose']     # Boolean
+    sq_clobber  = envVar['clobber']     # Boolean
+    sq_fast     = envVar['fast']        # Boolean
+    sq_path     = envVar['sq_path']     # This CAN change from registry
+
+    return callQueueCreate(sq_size, sq_slots, sq_clobber, verbose, debug, sq_fast, sq_path)
+
 
 
 
@@ -802,8 +847,10 @@ def start_ldm(reg, envVar):
     num_logs = reg["num_logs"]
 
     dirname  = os.path.dirname(log_file)
-    os.mkdirs(dirname, exists_ok = True)    # silent if exists
-        
+    #os.path.mkdirs(dirname, exists_ok = True)    # silent if exists: only in Python3.9
+    if not os.path.exists(dirname):
+        os.path.mkdirs(dirname)
+
     # Reset queue metrics
     os.system("pqutil -C")
     status = start(reg, envVar)
@@ -881,16 +928,21 @@ def stop_ldm(reg, envVar):
 # Check the pqact.conf file(s) for errors
 ###############################################################################
 
+# Parameters:
+#         -p pqact_conf  (default: $LDMHOME/etc/pqact.conf)
+#         conf_file 
 
-# No "pqact" configuration-file was specified on the command-line.
-# Set "@pathnames" according to the "pqact" configuration-files
-# specified in the LDM configuration-file.
+def pqactcheck(reg, envVar):
+
+    return are_pqact_confs_ok(reg, envVar)
+
+
 def are_pqact_confs_ok(reg, envVar):
 
     are_ok              = 1
     line_prefix         = ""
     pathnames           = ()  # tuple?
-    ldmd_conf           = reg["ldmd_conf"]
+    ldmd_conf           = envVar["ldmd_conf"]
     pqact_conf          = envVar['pqact_conf']
     pqact_conf_option   = envVar['pqact_conf_option']
 
@@ -1030,10 +1082,10 @@ def getQueueStatus(queue_path, name):       # name e.g. "surf"
     return status
 
 
-# check queue for corruption
+# check queue for corruption: return True if corrupted
 def queueCheck(reg, env):
     
-    if isRunning(reg, env):     #$pid_file, $ip_addr)) {
+    if isRunning(reg, env, True):     
         errmsg("queuecheck: The LDM system is running. queuecheck aborted")
         status = 1
     
@@ -1059,58 +1111,6 @@ def resetRegistry():
     status = 0
     
     return status
-
-
-###############################################################################
-# create a product queue
-###############################################################################
-
-def make_pq(reg, envVar, q_size, debug, verbose, pq_clobber, pq_fast, pq_slots):
-
-    status = 1     # default failure
-
-    if q_size != 0:
-        errmsg("product queue -s flag not supported, no action taken.")
-        return status
-    
-    # Ensure the LDM system isn't running
-    if isRunning(reg, envVar, True):
-        errmsg("make_pq(): There is a server running, mkqueue aborted")
-        return status
-    
-    debug_opt       = ""
-    if debug != 0:
-        debug_opt   = " -x" 
-
-    verbose_opt     = ""
-    if verbose != 0:
-        verbose_opt = " -v" 
-    
-    fast_opt        = ""
-    if pq_fast != 0:
-        fast_opt    = " -f"
-
-    clobber_opt     = ""
-    if pq_clobber != 0:
-        clobber_opt = " -c"
-
-    pq_slots_opt    = ""
-    if pq_slots != "default":
-        pq_slots_opt= f" -S {pq_slots}"
-
-    # Build the command line
-    # pq_size is already zero here!
-    pq_cmd = f"pqcreate {debug_opt} {verbose_opt} {fast_opt} {clobber_opt} {pq_slots_opt}  -q {pq_path} -s {pq_size} "
-    
-    # execute pqcreate(1)
-    if os.system(pq_cmd):
-        errmsg("make_pq(): mkqueue(1) failed")
-        return status
-    
-    status = 0
-
-    return status
-
 
 
 ###############################################################################
@@ -1206,6 +1206,16 @@ def isSurfQueueOk(reg):
     return status == 0
 
 
+# scour data directories
+def scour(reg):
+
+    scourFile = reg['scour_file']
+    scour_cmd = f"scour  {scourFile}"
+    status  = os.system(scour_cmd)
+    
+    return status
+
+
 # page the logfile
 def pageLog(reg):
 
@@ -1235,7 +1245,7 @@ def tailLog(reg):
 def clean(reg, env): 
 
     status = 0
-    if isRunning(reg, env):
+    if isRunning(reg, env, True):
         errmsg("The LDM system is running!  Stop it first.")
         status = 1
         return status
@@ -1267,10 +1277,8 @@ def clean(reg, env):
 
 def updateGemPakTables():
 
-    status = os.system("updateGempakTables")
+    return os.system("updateGempakTables")
     
-    return status
-
 
 ###############################################################################
 # Check the queue-files for errors

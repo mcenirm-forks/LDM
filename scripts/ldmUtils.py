@@ -10,7 +10,7 @@ from    random import randrange
 from    uptime import uptime
 import  time
 
-import  ldmSubs
+import  ldmSubs     as sub
 from    parseRegistry import RegistryParser
 from    environHandler import LDMenvironmentHandler
 
@@ -50,6 +50,9 @@ def _executeNtpDateCommand(ntpdate_cmd, timeout, ntpServer):
 
 def _increaseQueue(reg, envVar, pqMonValues):
 
+    status          = 0            # success
+    restartNeeded   = 0
+
     ageOldest       = pqMonValues[1] 
     minVirtResTime  = pqMonValues[2] 
     mvrtSize        = pqMonValues[3] 
@@ -61,39 +64,35 @@ def _increaseQueue(reg, envVar, pqMonValues):
     pq_path      = reg["pq_path"]
     newQueuePath = f"{pq_path}.new"
 
-    print(f"\n\t- Increasing the capacity of the queue to {newByteCount} bytes and {newSlotCount} slots...")
+    #print(f"\n\t- Increasing the capacity of the queue to {newByteCount} bytes and {newSlotCount} slots...")
 
     pqcreate_cmd = f"pqcreate -c -S {newSlotCount} -s {newByteCount} -q {newQueuePath}"
-    print(f"\n\t\t{pqcreate_cmd}")
+    #print(f"\n\t\t{pqcreate_cmd}")
 
     if os.system(pqcreate_cmd):
-        errmsg(f"vetQueueSize(): Couldn't create new queue: {newQueuePath}")
+        errmsg(f"vetQueueSize(): Couldn't increase queue: {newQueuePath}")
         status = 2            # major failure
         return status
     
-    print(f"\n\t\tCreated new QUEUE: {newQueuePath}")
+    #print(f"\n\t\tCreated new QUEUE: {newQueuePath}")
 
-    exit(0)
 
-    restartNeeded = 0
-    status = 0            # success so far
-
-    if isRunning(reg, envVar): 
+    if sub.isRunning(reg, envVar, True): 
         if stop_ldm(): 
             status = 2        # major failure
             return status
-        else:
-            restartNeeded = 1
     
-
+        restartNeeded = 1
+    
     # success so far
     # LDM is stopped
-    if grow(pq_path, newQueuePath): 
+    print("Grow  the queue...\n")
+    if sub.grow(pq_path, newQueuePath): 
         status = 2        # major failure
         return status
     
     print("Saving new queue parameters...\n")
-    if saveQueuePar(newByteCount, newSlotCount):
+    if sub.saveQueuePar(newByteCount, newSlotCount):
         status = 2    # major failure
         return status
         
@@ -102,7 +101,7 @@ def _increaseQueue(reg, envVar, pqMonValues):
     # restart needed
     if restartNeeded: 
         print("Restarting the LDM...\n")
-        if start_ldm():
+        if sub.start_ldm(reg, envVar):
             errmsg("vetQueueSize(): Couldn't restart the LDM")
             status = 2    # major failure
             return status
@@ -114,7 +113,7 @@ def _increaseQueue(reg, envVar, pqMonValues):
 
 
 
-def _decreaseQueue():
+def _decreaseQueue(reg, envVar):
     
     #2. recon == decrease  
     
@@ -129,31 +128,31 @@ def _decreaseQueue():
     newMaxLatency = minVirtResTime
     newTimeOffset = newMaxLatency
 
-    print(f"vetQueueSize(): Decreasing the maximum acceptable latency and \
-        \nthe time-offset of requests (registry parameters 'regpath" + "{MAX_LATENCY}" \
-        "' and 'regpath" + "{TIME_OFFSET}" + "') to {newTimeOffset} seconds...")
+    print(f"vetQueueSize(): Decreasing the maximum acceptable latency and " +
+        "\nthe time-offset of requests (registry parameters 'regpath" + "{MAX_LATENCY}'" + 
+        "\nand 'regpath" + "{TIME_OFFSET}')" + " to {newTimeOffset} seconds...")
 
 
     print("Saving new time parameters...\n")
-    if saveTimePar(newTimeOffset, newMaxLatency):
+    if sub.saveTimePar(newTimeOffset, newMaxLatency):
         status = 2    # major failure
         return status
     
 
     # new time parameters saved
-    if not isRunning(reg, envVar):
+    if not sub.isRunning(reg, envVar, True):
         status = 0    # success : LDM is not running
     
     else: # LDM is running
     
         print("Restarting the LDM...\n")
-        if stop_ldm():
+        if sub.stop_ldm(reg, envVar):
             errmsg("vetQueueSize(): Couldn't stop LDM")
             status = 2        # major failure
             return status
         
         # LDM stopped
-        if start_ldm():
+        if sub.start_ldm(reg, envVar):
             errmsg("vetQueueSize(): Couldn't start LDM")
             status = 2    # major failure
             return status
@@ -161,7 +160,7 @@ def _decreaseQueue():
         status = 0     # success    
 
     # reset queue metrics
-    os.system("pqutil -C")     # <-- not tested
+    status = os.system("pqutil -C")     # <-- not tested
     return status
 
 
@@ -680,13 +679,14 @@ def addMetrics(reg):
 # Command for plotting metrics: TO TEST!!!!!!!!!!!!!!!!!!!!!!!!!
 def plotMetrics(env):
 
-    begin = env['begin']
-    end = env['env']
-    begin = env['metrics_files']
+    begin   = env['begin']
+    end     = env['env']
+    begin   = env['metrics_files']
     
     plot_cmd = f"plotMetrics -b {begin} -e {end} {metrics_files}"
     
     return os.system(plot_cmd)
+
 
 def newMetrics(reg):
 
@@ -718,6 +718,7 @@ def readPqActConfFromLdmConf(ldmdConfPathname):
     return pqactConfs
 
 
+# Which 'ps(1)' command to use depends on the running OS
 def _whichPs(envVar):
 
     whichOs = envVar['os']
@@ -743,7 +744,7 @@ def _whichPs(envVar):
 # # HUP the pqact program(s)
 # ###############################################################################
 
-def ldmadmin_pqactHUP(envVar):
+def pqactHUP(envVar):
 
     status = 0
     cmd=""
@@ -795,24 +796,84 @@ def copyCliArgsToEnvVariable(envVar, cliDico):
             'm': 'max_latency', 
             'M': 'max_clients',
             'q': 'pq_path',
-            'o': 'time_server_offset',
+            'o': 'server_time_offset',
             'conf_file': 'ldmd_conf',
             'v': 'verbose',
             'x': 'debug',
-            'f': 'f',           # concerns both : force and feedset but they are disjoint (2 different commands)
-            'c': 'c',
+            'f': '',           # concerns both : force and feedset but they are disjoint (2 different commands)
+
+            'c': 'clobber',
             'n': 'num_logs',
             'l': 'log_file',
-            'b': 'b',
-            'e': 'e',
+            'b': 'begin',
+            'e': 'end',
             "pqact_conf_option":    "pqact_conf_option",
             "pqact_conf": "pqact_conf"
 
     }
+    # set the defaults:
+    envVar['feedset']           = "ANY"
+    envVar['pq_path']            = ""
+    envVar['sq_path']            = ""
+    envVar['ldmd_conf']         = ""
+    envVar['log_file']          = ""
+    envVar['debug']             = False
+    envVar['clobber']           = False
+    envVar['verbose']           = False
+    envVar['fast']              = False
+    envVar['max_latency']       = 0
+    envVar['max_clients']       = 0
+    envVar['server_time_offset']= 0
+    envVar['begin']             = 0
+    envVar['end']               = 0
+    envVar['num_logs']          = 0
+
+
     for key,val in cliDico.items():
         print(key, val)
         mappedAttribute = mapArgsToNames[key]
         envVar[mappedAttribute] = val
+
+
+def checkDiskSpace(pqSize):
+
+    rootAvailSize   = -1
+    epsilon         = int( pqSize * 10 / 100)
+
+    df_cmd = "df -k"
+    
+    try:
+        proc = subprocess.check_output(["df", "-k"], shell=True ).decode()
+        
+        headLine = False
+        for line in proc.split('\n'):
+            lineList = line.split()
+            if not lineList:
+                continue
+            
+            if "Available" in line:
+
+                availIndex = lineList.index("Available")
+                mountedOnIndex = lineList.index("Mounted")
+
+                headLine = True
+
+            else:
+                if headLine:
+                    mountPoint = lineList[mountedOnIndex]
+                    if mountPoint == "/":
+                        rootAvailSize = int(lineList[availIndex])
+                        break
+
+    except Exception as e:
+        print(e)
+        errmsg(f"command: {df_cmd} failed! ")
+
+    # 1K block
+    return rootAvailSize * 1024 > pq_size + epsilon
+
+    
+    
 
 
 
@@ -867,8 +928,15 @@ if __name__ == "__main__":
     #ldmadmin_pqactHUP(envVarDict)   # DONE - can only test if pqact process(es) is(are) running
     #expression = readMem()
 
-    eval("readMem()")
     begin = 20000
     end = 30000
     metrics_file = "toto.txt"
-    eval("plotMetrics(begin, end, metrics_file, envVarDict)")
+    #eval("plotMetrics(begin, end, metrics_file, envVarDict)")
+
+    pq_size = registryDict['pq_size']
+
+    if checkDiskSpace(pq_size): 
+        print(f"Enough space to create a queue in force mode? Yes!")
+    else:
+        print(f"Enough space to create a queue in force mode? No!")
+
