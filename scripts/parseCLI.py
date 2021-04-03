@@ -120,7 +120,7 @@ class CLIParser:
             self.cliParser.add_argument('-v',       action='store_true', help='verbose', required=False)
             self.cliParser.add_argument('-x',       action='store_true', help='debug', required=False)
             self.cliParser.add_argument('-c',       action='store_true', help='', required=False)
-            self.cliParser.add_argument('-f',       action='store_true', help='', required=False)
+            self.cliParser.add_argument('-f',       action='store_true', help='fast', required=False)
             self.cliParser.add_argument('-q q_path', action="store", dest='q', default=os.path.expandvars('$LDMHOME/var/queues/ldm.pq'), help='', metavar='', required=False)
         
         #(key ,val) = self.cliParser.parse_known_args()
@@ -132,7 +132,7 @@ class CLIParser:
             self.cliParser.add_argument('-v',       action='store_true', help='verbose', required=False)
             self.cliParser.add_argument('-x',       action='store_true', help='debug', required=False)
             self.cliParser.add_argument('-c',       action='store_true', help='', required=False)
-            self.cliParser.add_argument('-f',       action='store_true', help='', required=False)
+            self.cliParser.add_argument('-f',       action='store_true', help='fast', required=False)
             self.cliParser.add_argument('-q q_path',action="store", dest='q', default=os.path.expandvars('$LDMHOME/var/queues/pqsurf.pq'), help='', metavar='', required=False)
 
         if cmd == "delsurfqueue":
@@ -147,15 +147,15 @@ class CLIParser:
             self.cliParser.add_argument('conf_file',     nargs='?', type=str,  default=os.path.expandvars('$LDMHOME/etc/ldmd.conf'), help='', metavar='')
 
         if cmd == "watch":
-            self.cliParser.add_argument('-f feedset', action="store", dest='f', default='ANY',  help='', metavar='', required=False)
-            # NOT USED: self.cliParser.add_argument('-p pattern', action="store", dest='t', default='.*',   help='', metavar='', required=False)
+            self.cliParser.add_argument('-f feedset', action="store", dest='f', default='ANY',  help='feedset', metavar='', required=False)
 
         if cmd == "newlog":                                                        # begin: YYYYMMDD[.hh[mm[ss]]]
             self.cliParser.add_argument('-b begin', action="store", dest='b', default=19700101, type=float, help='', metavar='', required=False)
             self.cliParser.add_argument('-e end',   action="store", dest='e', default=30000101, type=float, help='', metavar='', required=False)
         
-        # commands without arguments do not need to be parsed.
-        #############################################################################
+        ########################################################
+        # commands without arguments do not need to be parsed. #
+        ########################################################
 
         args, config_file_argList = self.cliParser.parse_known_args()
 
@@ -213,7 +213,7 @@ class CLIParser:
         
         # add to CLIdico: pqact_conf_option and its value
         namespaceDict['pqact_conf_option'] = pqact_conf_option
-        namespaceDict['pqact_conf'] = pqact_conf
+        namespaceDict['p'] = pqact_conf
         
         #print(namespaceDict)
         return cortege

@@ -610,32 +610,32 @@ def readVmstat():
 def printMetrics(reg):
 
     metricsFilePath = reg['metrics_file']
+    port            = reg["port"]
+    pq_path         = reg["pq_path"]
+    pq_line         = list(getPq(pq_path))
+    portCount       = list(getPortCount(reg, port))
+    load            = list(getLoad())
+    thisTime        = float(getTime())    
+    cpu             = list(getCpu(reg))
+    
+    all_metrics     =  load + portCount + pq_line + cpu 
+    all_metrics.insert(0, thisTime)
+    
+    time_legend     = "\ttime: \t\tYYYYmmdd.hhmmss"
+    load_legend     = "\tuptime (avg at): 1 mn, 5 mn, 15 mn"
+    port_legend     = "\tport (count): \tremote, local"
+    pq_legend       = "\tpq: \t\tage, prodCount, byteCount"
+    cpu_legend      = "\tCPU: \t\tuserTime, sysTime, idleTime, waitTime, memUsed, memFree, swapUsed, swapFree, contextSwitches"
 
+    all_legend      = "\n   time  \t|     uptime     | port |            pq          |   CPU "
+
+    # print to file
     with open(metricsFilePath, "w+") as metricsFile:
-        port        = reg["port"]
-        pq_path     = reg["pq_path"]
-
-        pq_line     = list(getPq(pq_path))
-        portCount   = list(getPortCount(reg, port))
-        load        = list(getLoad())
-        thisTime    = float(getTime())    
-        cpu         = list(getCpu(reg))
-        
-        all_metrics =  load + portCount + pq_line + cpu 
-        all_metrics.insert(0, thisTime)
-        
-        time_legend = "\ttime: \t\tYYYYmmdd.hhmmss"
-        load_legend = "\tuptime (avg at): 1 mn, 5 mn, 15 mn"
-        port_legend = "\tport (count): \tremote, local"
-        pq_legend   = "\tpq: \t\tage, prodCount, byteCount"
-        cpu_legend  = "\tCPU: \t\tuserTime, sysTime, idleTime, waitTime, memUsed, memFree, swapUsed, swapFree, contextSwitches"
-
-        all_legend  = "\n   time  \t|     uptime     | port |            pq          |   CPU "
         print(all_legend,   file=metricsFile) 
         print(all_metrics,  file=metricsFile)
 
         # print the legend to the metricsFilePath
-        print(f"\nLegend:\n{time_legend}\n{load_legend}\n{port_legend}\n{pq_legend}\n{cpu_legend}\n", file=metricsFile)
+        # print(f"\nLegend:\n{time_legend}\n{load_legend}\n{port_legend}\n{pq_legend}\n{cpu_legend}\n", file=metricsFile)
 
 
 
@@ -654,7 +654,10 @@ def addMetrics(reg):
 
     try:
         lock.acquire(timeout=20)
-        #print("Lock acquired.")
+        
+        # print metrics to file
+        printMetrics(reg, metricsFilename)
+
     except:
         print(f"\nLock already acquired: lockID: {lock}\n")
         errmsg(f"addmetrics(): Couldn't lock metrics-file '{metricsFilename}'. \
@@ -662,26 +665,23 @@ def addMetrics(reg):
         status  = 2
         return status
 
-    # print metrics to file
-    printMetrics(reg, metricsFilename)
-
-
     try:
         lock.release()
     except Timeout:
         print(f"releaseLock(): Could not release lock on '{fileToLock}'! \
             \n(Manually delete it.)")
         status  = 3
-        return status
+        
+    return status
 
 
 #
 # Command for plotting metrics: TO TEST!!!!!!!!!!!!!!!!!!!!!!!!!
-def plotMetrics(env):
+def plotMetrics(reg, envVar):
 
-    begin   = env['begin']
-    end     = env['env']
-    begin   = env['metrics_files']
+    begin           = envVar['begin']
+    end             = envVar['end']
+    metrics_files   = reg['metrics_files']
     
     plot_cmd = f"plotMetrics -b {begin} -e {end} {metrics_files}"
     
@@ -704,7 +704,7 @@ def readPqActConfFromLdmConf(ldmdConfPathname):
     for line in f:
         if not (line.lower().startswith("exec") and "pqact" in line):
             continue
-        #print(line)
+    
         if len(line.split()) >= 3:
             newPqAtConf = os.path.expanduser(line.split()[2])
             if not os.path.exists(newPqAtConf):
@@ -785,7 +785,7 @@ def pqactHUP(envVar):
     print("Check pqact HUP with command \"ldmadmin tail\"\n")
     kill_cmd = f"kill -HUP {pqact_pids}"
     
-    system( kill_cmd )
+    status = os.system( kill_cmd )
 
     return status
 
@@ -801,22 +801,22 @@ def copyCliArgsToEnvVariable(envVar, cliDico):
             'v': 'verbose',
             'x': 'debug',
             'f': '',           # concerns both : force and feedset but they are disjoint (2 different commands)
-
             'c': 'clobber',
             'n': 'num_logs',
             'l': 'log_file',
             'b': 'begin',
             'e': 'end',
-            "pqact_conf_option":    "pqact_conf_option",
-            "pqact_conf": "pqact_conf"
+            "pqact_conf_option": "pqact_conf_option",
+            "p": "pqact_conf"
 
     }
     # set the defaults:
     envVar['feedset']           = "ANY"
-    envVar['pq_path']            = ""
-    envVar['sq_path']            = ""
+    envVar['pq_path']           = ""
+    envVar['sq_path']           = ""
     envVar['ldmd_conf']         = ""
     envVar['log_file']          = ""
+    envVar['pqact_conf']        = ""
     envVar['debug']             = False
     envVar['clobber']           = False
     envVar['verbose']           = False
@@ -824,23 +824,23 @@ def copyCliArgsToEnvVariable(envVar, cliDico):
     envVar['max_latency']       = 0
     envVar['max_clients']       = 0
     envVar['server_time_offset']= 0
-    envVar['begin']             = 0
-    envVar['end']               = 0
+    envVar['begin']             = 19700101  # YYYYMMDD
+    envVar['end']               = 30000101  # ...
     envVar['num_logs']          = 0
 
-
     for key,val in cliDico.items():
-        print(key, val)
+
         mappedAttribute = mapArgsToNames[key]
         envVar[mappedAttribute] = val
 
 
-def checkDiskSpace(pqSize):
+
+def checkDiskSpace(pq_path, pqSize):
 
     rootAvailSize   = -1
-    epsilon         = int( pqSize * 10 / 100)
+    residualMem     = int( pqSize * 10 / 100)   # allow 10% availability
 
-    df_cmd = "df -k"
+    df_cmd = f"df -k {pq_path}"
     
     try:
         proc = subprocess.check_output(["df", "-k"], shell=True ).decode()
@@ -861,7 +861,7 @@ def checkDiskSpace(pqSize):
             else:
                 if headLine:
                     mountPoint = lineList[mountedOnIndex]
-                    if mountPoint == "/":
+                    if mountPoint == "/": 
                         rootAvailSize = int(lineList[availIndex])
                         break
 
@@ -870,11 +870,7 @@ def checkDiskSpace(pqSize):
         errmsg(f"command: {df_cmd} failed! ")
 
     # 1K block
-    return rootAvailSize * 1024 > pq_size + epsilon
-
-    
-    
-
+    return rootAvailSize * 1024 > pq_size + residualMem
 
 
 if __name__ == "__main__":
@@ -928,15 +924,17 @@ if __name__ == "__main__":
     #ldmadmin_pqactHUP(envVarDict)   # DONE - can only test if pqact process(es) is(are) running
     #expression = readMem()
 
-    begin = 20000
-    end = 30000
+    begin = 20210306
+    end =  20220306
     metrics_file = "toto.txt"
-    #eval("plotMetrics(begin, end, metrics_file, envVarDict)")
+    eval("plotMetrics(begin, end, metrics_file, envVarDict)")
 
     pq_size = registryDict['pq_size']
 
-    if checkDiskSpace(pq_size): 
-        print(f"Enough space to create a queue in force mode? Yes!")
+    pq_path= registryDict['pq_path']
+
+    if checkDiskSpace(pq_path, pq_size): 
+        print(f"Enough space to create a queue in fast mode? Yes!")
     else:
-        print(f"Enough space to create a queue in force mode? No!")
+        print(f"Enough space to create a queue in fast mode? No!")
 

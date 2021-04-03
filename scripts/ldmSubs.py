@@ -658,7 +658,6 @@ def del_surf_pq(reg, envVar):
 
 def callQueueCreate(q_size, q_slots, clobber, verbose, debug, fast, q_path):
 
-
     status      = 1     # default failure
 
     diskOk      = True
@@ -670,7 +669,7 @@ def callQueueCreate(q_size, q_slots, clobber, verbose, debug, fast, q_path):
         verbose_opt = " -v" 
     if fast:
         fast_opt    = " -f"
-        diskOk = util.checkDiskSpace()   # shall return False if not enough space on disk
+        diskOk = util.checkDiskSpace(q_path, q_size)   # shall return False if not enough space on disk
     if clobber:
         clobber_opt = " -c"
     
@@ -700,7 +699,7 @@ def make_pq(reg, envVar):
     pq_size     = reg['pq_size']          # This does not change from registry
     pq_slots    = reg['pq_slots']    # This does not change from registry
     if pq_slots == "default":
-        pq_slots= int(pq_size / 1000000 * 6881)
+        pq_slots= int(pq_size / 57344)  # divide by 56K
 
     debug       = envVar['debug']       # Boolean
     verbose     = envVar['verbose']     # Boolean
@@ -719,9 +718,7 @@ def make_surf_pq(reg, envVar):
 
     # need the number of slots to create
     sq_size     = reg['surf_size']          # This does not change from registry
-    sq_slots    = reg['pq_slots']    # This does not change from registry
-    if sq_slots == "default":
-        sq_slots= int(sq_size / 1000000 * 6881)
+    sq_slots= int(sq_size / 1000000 * 6881)
 
     debug       = envVar['debug']       # Boolean
     verbose     = envVar['verbose']     # Boolean
@@ -732,8 +729,6 @@ def make_surf_pq(reg, envVar):
     return callQueueCreate(sq_size, sq_slots, sq_clobber, verbose, debug, sq_fast, sq_path)
 
 
-
-
 ###############################################################################
 # start the LDM server
 ###############################################################################
@@ -741,36 +736,33 @@ def make_surf_pq(reg, envVar):
 def start(reg, envVar):
 
     status      = 0     # default success
-    debug       = 1
-    verbose     = 1
-    ldmd_conf   = reg["ldmd_conf"]
+
+    debug       = envVar["debug"]
+    verbose     = envVar["verbose"]
+    ldmd_conf   = envVar["ldmd_conf"]
     ip_addr     = reg["ip_addr"]
     port        = reg["port"]
-    max_clients = reg["max_clients"]
-    max_latency = reg["max_latency"]
-    offset      = reg["server_time_offset"]
-    pq_path     = reg["pq_path"]
+    max_clients = envVar["max_clients"]
+    max_latency = envVar["max_latency"]
+    offset      = envVar["server_time_offset"]
+    pq_path     = envVar["pq_path"]
     pid_file    = envVar["pid_file"]
 
     # Build the 'ldmd' command line
     ldmd_cmd = f"ldmd -I {ip_addr} -P {port} -M {max_clients} -m {max_latency} -o {offset} -q {pq_path}"
 
     if debug:
-        ldmd_cmd += " -x"
+        ldmd_cmd += " -x -v "
     
-    if verbose:
-        ldmd_cmd += " -v"
+    if verbose and not debug:
+        ldmd_cmd += " -v "
     
     
     # Check the ldm(1) configuration-file
-    print(f" >> start(): 1. Checking LDM configuration-file ({ldmd_conf})...\n")
-    line_prefix = ""               # used to indent the print outputs
-    prev_line_prefix = line_prefix  
-    line_prefix += "    "               # to indent the print outputs
-    #( @output ) = `$cmd_line -nvl- $ldmd_conf 2>&1` ;
-    # Use a subprocess()?
+    print(f" >> start(): 1. Checking LDM configuration-file ({ldmd_conf})...\n")            
+
     ldmd_cmd2 = f"{ldmd_cmd} -nvl- {ldmd_conf} 2>&1 "
-    # verbose and print(f"\n\tldmd config: {ldmd_cmd2}\n")
+
     output = os.system(ldmd_cmd2) >> 8
     # print(f"\noutput: {output}\n")   # : 0 means no problem
     if output:
@@ -778,15 +770,11 @@ def start(reg, envVar):
         status = 1
     
     else:
-        line_prefix = prev_line_prefix
         print("\n >> start(): 2. Starting the LDM server...\n")
         
         ldmd_cmd += f" > {pid_file}"
-        #status = os.system("$cmd_line $ldmd_conf > $pid_file")
-        # verbose and print(f"\n\tldmd_cmd: {ldmd_cmd}\n")
-
         status = os.system(ldmd_cmd)
-        #print(f"status: {status}")
+        
         if status:
             os.unlink(pid_file)
             errmsg(" >> start(): 2. Could not start LDM server")
@@ -831,23 +819,19 @@ def start_ldm(reg, envVar):
         
     # Check the pqact(1) configuration-file(s)
     print("\nstart_ldm(): 4. Checking pqact(1) configuration-file(s)...")
-    prev_line_prefix = line_prefix
-    line_prefix += "    "
+ 
     if not are_pqact_confs_ok(reg, envVar):
         errmsg("")
         status = 1
         return status
 
     # pqact(1) config-files OK
-
-    line_prefix = prev_line_prefix
-
     # Rotate the ldm log files if appropriate
     log_file = reg["log_file"]
     num_logs = reg["num_logs"]
 
     dirname  = os.path.dirname(log_file)
-    #os.path.mkdirs(dirname, exists_ok = True)    # silent if exists: only in Python3.9
+    #os.path.mkdirs(dirname, exists_ok = True)    # silent if exists: only in Python3.9 only!
     if not os.path.exists(dirname):
         os.path.mkdirs(dirname)
 
@@ -939,8 +923,8 @@ def pqactcheck(reg, envVar):
 
 def are_pqact_confs_ok(reg, envVar):
 
-    are_ok              = 1
-    line_prefix         = ""
+    are_ok              = True
+
     pathnames           = ()  # tuple?
     ldmd_conf           = envVar["ldmd_conf"]
     pqact_conf          = envVar['pqact_conf']
@@ -973,7 +957,7 @@ def are_pqact_confs_ok(reg, envVar):
         ####################################################################
         if 0:
             output = ""
-            leading_spaces = 0
+
             numOutput = 0
             print(f"{line_prefix}{pathname}: ")
             #print(f'grep -n "^ " {pathname} ')
@@ -988,19 +972,17 @@ def are_pqact_confs_ok(reg, envVar):
                 for line in output:
                     print(f"{line_prefix}{line}")
                 
-
                 line_prefix = prev_line_prefix
                 leading_spaces = 1
-            
 
             if leading_spaces:
                are_ok = 0
-               return are_ok
             
+        #else:
         ######################################################################
 
         # Check the syntax of the "pqact" configuration-file via "pqact".
-        read_ok = 0
+        read_ok = False
         items_lines = []
         pqact_cmd = f"pqact -vl- -q /dev/null {pathname} 2>&1"
         
@@ -1014,22 +996,15 @@ def are_pqact_confs_ok(reg, envVar):
         for line in items_lines:
         
             if "Successfully read" in line:     
-                read_ok = 1
+                read_ok = True
                 print(f"\t{pathname}: syntactically correct\n") 
                 return read_ok
 
 
         print(f"{pathname} has problems:\n")
-        prev_line_prefix = line_prefix
-        line_prefix += "    "
+        are_ok = False
 
-        for line in items_lines:
-            print(f"{line_prefix}{line}")
-        
-
-        line_prefix = prev_line_prefix
-        are_ok = 0
-        
+    # for pathname in pathnames: end loop
     
     return are_ok
 
@@ -1043,14 +1018,12 @@ def getQueueStatus(queue_path, name):       # name e.g. "surf"
     
     status      = 0
     pqcheck_cmd = f"pqcheck -q {queue_path} 2> /dev/null"
-    #print(f"\t{pqcheck_cmd}")
 
     try:
         status      = os.system(pqcheck_cmd) >> 8    # to get the system status code
     except Exception as e:
         errmsg(e)
         return -1
-
 
     if 1 == status:
         errmsg(f"The self-consistency of the {name}-queue couldn't be determined.\nSee the logfile for details.")
@@ -1082,7 +1055,7 @@ def getQueueStatus(queue_path, name):       # name e.g. "surf"
     return status
 
 
-# check queue for corruption: return True if corrupted
+# check product-queue for corruption: return True if corrupted
 def queueCheck(reg, env):
     
     if isRunning(reg, env, True):     
@@ -1108,6 +1081,7 @@ def resetRegistry():
     if os.system("regutil -R"):     # check return status here
         errmsg("Couldn't reset LDM registry")
         return status
+        
     status = 0
     
     return status
