@@ -34,34 +34,39 @@ class CLIParser:
     ldmCommandsDict={
     	"start": ["[-v] [-x] [-m maxLatency] [-o offset] [-q q_path] [-M max_clients] [conf_file]",	"Starts the LDM"],
     	"stop":					["",								"Stops the LDM"],
-        "restart":				["[-v] [-x] [-m maxLatency] [-o offset] [-q q_path] [-M max_clients] [conf_file]",	"Restarts a running LDM"],
+        "restart":				["[-v] [-x] [-m maxLatency] [-o offset] [-q q_path] [-M max_clients] [conf_file]",	
+                                                                    "Restarts a running LDM"],
         "mkqueue":				["[-v] [-x] [-c] [-f] [-q q_path]",	"Creates a product-queue"],
         "delqueue":				["[-q q_path]",						"Deletes a product-queue"],
         "mksurfqueue":			["[-v] [-x] [-c] [-f] [-q q_path]",	"Creates a product-queue for pqsurf(1)"],
         "delsurfqueue":			["[-q q_path]",						"Deletes a pqsurf(1) product-queue"],
-        "newlog":				["[-n numlogs] [-l logfile]",		"Rotates a log file"],
-        "scour":				["",		"Scours data directories"],
-        "isrunning":			["",		"Exits status 0 if LDM is running else exit 1"],
-        "checkinsertion":		["",		"Checks for recent insertion of data-product into product-queue"],
-        "vetqueuesize":			["",		"Vets the size of the product-queue"],
+        "newlog":				["[-n numlogs] [-l logfile]",       "Rotates a log file"],
+        "scour":				["",		                        "Scours data directories"],
+        "isrunning":			["",		                        "Exits status 0 if LDM is running else exit 1"],
+        "checkinsertion":		["",		                        "Checks for recent insertion of data-product into product-queue"],
+        "vetqueuesize":			["",		                        "Vets the size of the product-queue"],
         "pqactcheck":			["[-p pqact_conf] [conf_file]",		"Checks syntax of pqact(1) files"],
-        "pqactHUP":				["",		"Sends HUP signal to pqact(1) program"],
-        "queuecheck":			["",		"Checks for product-queue corruption"],
+        "pqactHUP":				["",		                        "Sends HUP signal to pqact(1) program"],
+        "queuecheck":			["",		                        "Checks for product-queue corruption"],
+        "check":                ["",                                "Checks the LDM"],
         "watch":				["[-f feedset]",					"Monitors incoming products"],
-        "config":				["",		"Prints LDM configuration"],
-        "log":					["",		"Pages through the LDM log file"],
-        "tail":					["",		"Monitors the LDM log file"],
-        "checktime":			["",		"Checks the system clock"],
-        "clean":				["",		"Cleans up after an abnormal termination"],                                                 
-        "printmetrics":			["",		"Prints LDM metrics"],
-        "addmetrics":			["",		"Accumulates LDM metrics"],
+        "config":				["",		                        "Prints LDM configuration"],
+        "log":					["",		                        "Pages through the LDM log file"],
+        "tail":					["",		                        "Monitors the LDM log file"],
+        "checktime":			["",		                        "Checks the system clock"],
+        "clean":				["",		                        "Cleans up after an abnormal termination"],                                                 
+        "printmetrics":			["",		                        "Prints LDM metrics"],
+        "addmetrics":			["",		                        "Accumulates LDM metrics"],
         "plotmetrics":			["[-b begin] [-e end]",				"Plots LDM metrics"],
-        "newmetrics":			["",		"Rotates the metrics files"],
-        "updategempaktables":	["",		"Updates the GEMPAK tables"],
-        "usage":				["",		"Prints this message"]
+        "newmetrics":			["",		                        "Rotates the metrics files"],
+        "updategempaktables":	["",		                        "Updates the GEMPAK tables"],
+        "usage":				["",		                        "Prints the usage message"]
         
     }
-    lockRequiringCmds = ["start", "restart", "stop", "mkqueue", "delqueue", "mksurfqueue", "delsurfqueue", "vetqueuesize", "check"]
+    lockRequiringCmds = [   "start", "restart", "stop", 
+                            "mkqueue", "delqueue", "mksurfqueue", 
+                            "delsurfqueue", "vetqueuesize", "check"
+                        ]
 
     def __init__(self, ldmhome):
 

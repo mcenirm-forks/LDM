@@ -707,7 +707,6 @@ def readPqActConfFromLdmConf(ldmdConfPathname):
 
     pqactConfs = ()
 
-    print(ldmdConfPathname)
     f = open(ldmdConfPathname, "r")
     for line in f:
         if not (line.lower().startswith("exec") and "pqact" in line):
@@ -882,6 +881,8 @@ def checkDiskSpace(pq_path, pqSize):
 def kill_ldmd_proc(env):
     
     status = 0
+    
+    # Kill the ldmd processes
     ldmd_processes      = "ldmd -I"
     ps_grep_ldmd_cmd    = f"ps -ef | grep '{ldmd_processes}'"
     try:
@@ -900,10 +901,18 @@ def kill_ldmd_proc(env):
         status = -1
         return status
 
-    pidFilename = env['pid_file']
-    if _doesFileExist(pidFilename):
-        os.unlink(pidFilename)
+    # Remove the pid file
+    pidFile = env['pid_file']
+    if util._doesFileExist(pidFile): 
+        try:
+            os.unlink(pidFile) 
+        except: 
+            errmsg(f"Couldn't remove LDM server PID-file '{pidFile}'")
+            status = 3
+            return status
 
+    #else: debug and print(f"pid file {pidFile} does not exist!")
+        
     return status
 
 

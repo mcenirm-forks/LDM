@@ -65,6 +65,7 @@ class LDMenvironmentHandler():
                               "pid_file"            : pidFile, 
                               "lock"                : None,
                               "lock_acquired"       : False,
+                              "pq_avg_size"         : 0,
                               "pqact_conf_option"   : 0
                             }
         

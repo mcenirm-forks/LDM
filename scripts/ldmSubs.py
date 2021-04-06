@@ -27,53 +27,61 @@ from    environHandler import LDMenvironmentHandler
 
 def ldmConfig(reg, env):
 
+    paths = os.environ['PATH'].split(":")
+    first = True
     print(f"\n")
-    print(f"hostname:              { reg['hostname'] }")
-    print(f"os:                    { env['os'] }")
-    print(f"release:               { env['release'] }")
-    print(f"ldmhome:               { env['ldmhome'] }")
-    print(f"LDM version:           6.13.14.15")
-    print(f"PATH:                  { os.environ['PATH'] }")
+    print(f"\thostname:              { reg['hostname'] }")
+    print(f"\tos:                    { env['os'] }")
+    print(f"\trelease:               { env['release'] }")
+    print(f"\tldmhome:               { env['ldmhome'] }")
+    print(f"\tLDM version:           6.13.14.15")
+    print("\tPATH:                   ", end="")
+    for aPath in paths:
+        if aPath:
+            first and print(f"{aPath}")
+            not first and print(f"\t\t\t\t{aPath}")
+            first = False
 
-    print(f"LDM conf file:         { reg['ldmd_conf'] }")
-    print(f"pqact(1) conf file:    { reg['pqact_conf'] }")
-    print(f"scour(1) conf file:    { reg['scour_file'] }")
-    print(f"product queue:         { reg['pq_path'] }")
-    print(f"queue size:            { reg['pq_size'] } bytes")
-    print(f"queue slots:           { reg['pq_slots'] }")
-    print(f"reconciliation mode:   { reg['reconMode'] }")
-    print(f"pqsurf(1) path:        { reg['surf_path'] }")
-    print(f"pqsurf(1) size:        { reg['surf_size'] }")
+    print(f"\tLDM conf file:         { reg['ldmd_conf'] }")
+    print(f"\tpqact(1) conf file:    { reg['pqact_conf'] }")
+    print(f"\tscour(1) conf file:    { reg['scour_file'] }")
+    print(f"\tproduct queue:         { reg['pq_path'] }")
+    print(f"\tqueue size:            { reg['pq_size'] } bytes")
+    print(f"\tqueue average size:    { reg['pq_avg_size'] } bytes")
+    print(f"\tqueue slots:           { reg['pq_slots'] }")
+    print(f"\treconciliation mode:   { reg['reconMode'] }")
+    print(f"\tpqsurf(1) path:        { reg['surf_path'] }")
+    print(f"\tpqsurf(1) size:        { reg['surf_size'] }")
     if reg['ip_addr'] == None:
         reg['ip_addr'] = "all"
-    print(f"IP address:            { reg['ip_addr'] }")       #, length({ reg['ip_addr) ? { reg['ip_addr : "all")
+    print(f"\tIP address:            { reg['ip_addr'] }")       #, length({ reg['ip_addr) ? { reg['ip_addr : "all")
     if reg['port'] == None:
         reg['port'] = "388"
-    print(f"port:                  { reg['port'] }")          #, length({ reg['port) ? { reg['port : 388) 
-    print(f"maximum clients:       { reg['max_clients'] }")
-    print(f"maximum latency:       { reg['max_latency'] }")
-    print(f"time-offset limit:     { reg['server_time_offset'] }")    
+    print(f"\tport:                  { reg['port'] }")          #, length({ reg['port) ? { reg['port : 388) 
+    print(f"\tmaximum clients:       { reg['max_clients'] }")
+    print(f"\tmaximum latency:       { reg['max_latency'] }")
+    print(f"\ttime-offset limit:     { reg['server_time_offset'] }")    
     # ntp
-    print(f"ntpdate(1):            { reg['ntpdate_command'] }")
-    print(f"ntpdate(1) timeout:    { reg['ntpdate_timeout'] }")
-    print(f"check time:            { reg['check_time_enabled'] }")
-    print(f"check-time limit:      { reg['check_time_limit'] }")
-    print(f"ntpdate servers:       { ' '.join(reg['ntpdate_servers']) }")
+    print(f"\tntpdate(1):            { reg['ntpdate_command'] }")
+    print(f"\tntpdate(1) timeout:    { reg['ntpdate_timeout'] }")
+    print(f"\tcheck time:            { reg['check_time_enabled'] }")
+    print(f"\tcheck-time limit:      { reg['check_time_limit'] }")
+    print(f"\tntpdate servers:       { ' '.join(reg['ntpdate_servers']) }")
 
-    print(f"log file:              { reg['log_file'] }")
-    print(f"numlogs:               { reg['num_logs'] }")
-    print(f"log_rotate:            { reg['log_rotate'] }")
-    print(f"netstat:               { reg['netstat'] }")
-    print(f"top:                   { reg['top'] }")
-    print(f"metrics file:          { reg['metrics_file'] }")
-    print(f"metrics files:         { reg['metrics_files'] }")
-    print(f"num_metrics:           { reg['num_metrics'] }")
+    print(f"\tlog file:              { reg['log_file'] }")
+    print(f"\tnumlogs:               { reg['num_logs'] }")
+    print(f"\tlog_rotate:            { reg['log_rotate'] }")
+    print(f"\tnetstat:               { reg['netstat'] }")
+    print(f"\ttop:                   { reg['top'] }")
+    print(f"\tmetrics file:          { reg['metrics_file'] }")
+    print(f"\tmetrics files:         { reg['metrics_files'] }")
+    print(f"\tnum_metrics:           { reg['num_metrics'] }")
     
-    print(f"delete info files:     { reg['delete_info_files'] }")
+    print(f"\tdelete info files:     { reg['delete_info_files'] }")
 
     # environment vars    
-    print(f"PID file:              { env['pid_file'] }")
-    print(f"Lock file:             { env['lock_file'] }")
+    print(f"\tPID file:              { env['pid_file'] }")
+    print(f"\tLock file:             { env['lock_file'] }")
         
     print("\n")
 
@@ -128,6 +136,9 @@ def grow(pq_path, newQueuePath):
 
 def errmsg(msg):
     print(f"\n\tERROR: {msg}")
+
+def  warnmsg(msg):
+    print(f"\n\tWARNING: {msg}")
 
 
 def saveQueuePar(pq_size, size, slots):
@@ -252,12 +263,11 @@ def getElapsedTimeOfServer(reg, envVar):
 #
 def vetQueueSize(reg, envVar):
 
-    print("\n\t>> vetQueueSize()\n")
     status      = 2          # default major failure
 
     pid_file    = envVar["pid_file"] 
     ip_addr     = reg["ip_addr"]
-    max_latency = envVar["max_latency"]
+    max_latency = reg["max_latency"]
 
     etime       = getElapsedTimeOfServer(reg, envVar)
     if etime < max_latency:
@@ -265,7 +275,7 @@ def vetQueueSize(reg, envVar):
         return status
     
     pq_path = reg["pq_path"]
-    status, pq_line = _executePqMon(pq_path)
+    status, pq_line = util._executePqMon(pq_path)
     if status == -1:
         errmsg("vetQueueSize(): pqmon(1) failure")
         status = 2
@@ -281,18 +291,18 @@ def vetQueueSize(reg, envVar):
 
     pqMonElements = [isFull, ageOldest, minVirtResTime, mvrtSize, mvrtSlots, max_latency]
 
-    print(f"\n\tisFull: {isFull}, ageOldest: {ageOldest}, minVirtResTime: {minVirtResTime}, mvrtSize: {mvrtSize}, mvrtSlots: {mvrtSlots}, max_latency: {max_latency}")
+    # debug and print(f"\n\tisFull: {isFull}, ageOldest: {ageOldest}, minVirtResTime: {minVirtResTime}, mvrtSize: {mvrtSize}, mvrtSlots: {mvrtSlots}, max_latency: {max_latency}")
 
     # A- No reconciliation needed
     ##############################
     if isFull == 0 or minVirtResTime < 0 or minVirtResTime >= max_latency or mvrtSize <= 0 or mvrtSlots <= 0:
         status = 0
-        print("    # A- No reconciliation needed")
+        print("\n\t\t - No reconciliation needed")
         return status
 
     # B- Reconciliation needed
     ##########################
-    print("    # B- Reconciliation needed")
+    print("\n\t\t - Reconciliation needed")
 
     reconMode           = reg["reconMode"]
     # print(f'\nINFO: The value of the registry parameter "RECONCILIATION_MODE" is "{reconMode}"\n')
@@ -305,15 +315,15 @@ def vetQueueSize(reg, envVar):
     
     #1.
     if reconMode == "increase queue":
-        return _increaseQueue(reg, envVar, pqMonElements)
+        return util._increaseQueue(reg, envVar, pqMonElements)
     
     #2.
     if reconMode == "decrease maximum latency":
-        return _decreaseQueue(reg, envVar)
+        return util._decreaseQueue(reg, envVar)
 
     #3.
     if reconMode == "do nothing":
-        return _doNothing(pqMonElements)
+        return util._doNothing(pqMonElements)
 
     #4.
     errmsg(f"Unknown reconciliation mode: '{reconMode}'")
@@ -334,7 +344,6 @@ def isRunning(reg, envir, ldmpingFlag):
     pidFilename             = envir['pid_file']
     ip_addr                 = reg['ip_addr']
     envir['ldmd_running']   = False
-
 
     if util._getLdmdPid(pidFilename) != -1:   # valid pid found
 
@@ -371,23 +380,22 @@ def isRunning(reg, envir, ldmpingFlag):
 
 def check_insertion(reg):
 
-    print("\n\t>> check_insertion()")
     status = 0
 
-    pq_path = reg["pq_path"]
-    status, pq = _executePqMon(pq_path)
+    pq_path     = reg["pq_path"]
+    status, pq  = util._executePqMon(pq_path)
     if status == -11:
-        errmsg("check_insertion(): pqmon(1) failure")
+        errmsg("\tcheck_insertion(): pqmon(1) failure")
         return status
 
-    print(f"\n\t --> pqmon: {pq}")
+    # debug and print(f"\n\t --> pqmon: {pq}")
 
-    age= pq.split()[8]
-    insertion_check_period = reg["insertion_check_period"]
+    age         = int(pq.split()[8])
+    check_period= reg["insertion_check_period"]
 
-    if age > insertion_check_period:
-        errmsg(f'\tThe last data-product was inserted {age} seconds ago, \
-                \nwhich is greater than the registry - parameter "INSERTION_CHECK_INTERVAL" ({insertion_check_period})')
+    if age > check_period:
+        warnmsg(f'The last data-product was inserted {age} seconds ago, \
+                \n\t\t which is greater than the registry - parameter "INSERTION_CHECK_INTERVAL" value (={check_period})')
         status = -1
 
     return status
@@ -446,27 +454,27 @@ def removeOldProdInfoFiles(env, pid_file):
 def checkLdm(reg, envVar):
 
     status   = 0
-    pid_file = envVar['pid_file']
-    ip_addr  = envVar['ip_addr']
 
-    print("Checking for a running LDM system...\n")
+    print("\n\tcheckLdm(): 1. Checking for a running LDM system...\n")
     if not isRunning(reg, envVar, True):
-        print("The LDM server is not running")
+        print("\t\t -> The LDM server is not running")
         status = 2
     
     else:
-        print("Checking the system clock...\n")
-        if checkTime():
+        print("\tcheckLdm(): 2. Checking the system clock...\n")
+        if checkTime(reg) != 0:
             status = 3
-        
+            print("\n\t\t --> Consequently, skipping check_insertion() and vetQueueSize() checks...\n")
+
         else:
-            print("Checking the most-recent insertion into the queue...\n")
-            if check_insertion():
+            print("\tcheckLdm(): 3. Checking the most-recent insertion into the queue...\n")
+            if check_insertion(reg) != 0:
                 status = 4
+                print("\n\t\t --> Consequently, skipping vetQueueSize() check...\n")
             
             else:
-                print("Vetting the size of the queue against the maximum acceptable latency...\n")
-                if vetQueueSize():
+                print("\tcheckLdm(): 4. Vetting the size of the queue against the maximum acceptable latency...\n")
+                if vetQueueSize(reg, envVar) != 0:
                     status = 5
                 
                 else:
@@ -500,19 +508,19 @@ def watch(reg, env):
 
 def checkTime(reg):
     
-    failure = 0
+    failure = 0     # no failure (success)
 
     ntpdate_servers, ntpdate_cmd,\
     ntpdate_timeout, number_of_servers,\
     check_time, check_time_limit,\
     warn_if_check_time_disabled,\
-    ntpdate_cmd_xpath, regUtil_cmd =  _getTheseRegVariables(reg)
+    ntpdate_cmd_xpath, regUtil_cmd =  util._getTheseRegVariables(reg)
 
-    failure = _isCheckTimeEnabled(check_time, warn_if_check_time_disabled, regUtil_cmd)
+    failure = util._isCheckTimeEnabled(check_time, warn_if_check_time_disabled, regUtil_cmd)
     if failure == 1:
         return failure
  
-    failure = _areNTPServersAvailable( number_of_servers)
+    failure = util._areNTPServersAvailable( number_of_servers)
     if failure == 1:
         return failure
 
@@ -525,9 +533,8 @@ def checkTime(reg):
         timeServer = ntpdate_servers[i]
 
         # execute ntpdate on available servers    
-        print(f"\n\tChecking time from NTP server: {timeServer}")
-        status, offset = _executeNtpDateCommand(ntpdate_cmd, ntpdate_timeout, timeServer)
-        print(f"\tOffset: {offset}\n")
+        print(f"\t\t- Checking time from NTP server: {timeServer}")
+        status, offset = util._executeNtpDateCommand(ntpdate_cmd, ntpdate_timeout, timeServer)
 
         if status == -1:
             error = f"\nCould not execute the command '{ntpdate_cmd}'. \
@@ -538,12 +545,10 @@ def checkTime(reg):
 
         
         if status == -2:
-            error = f'\nCould not get time from time-server at {timeServer} using the ntpdate(1) \
-                    \nutility, {ntpdate_cmd} \
-                    \nIf the utility is valid and this happens often, then remove {timeServer} \
-                    \nfrom registry parameter regpath "NTPDATE_SERVERS"'
-
-            errmsg(error)
+            warning_msg = f'Could not get time from time-server at {timeServer} using the ntpdate(1) utility, {ntpdate_cmd} \
+                    \t\t If the utility is valid and this happens often, then remove {timeServer} from registry parameter regpath "NTPDATE_SERVERS"'
+            print(f"\t\t- Offset: <invalid>\n")
+            warnmsg(warning_msg)
             nbServs -= 1
             # remove this time server from list:
             ntpdate_servers.remove(timeServer)
@@ -560,7 +565,8 @@ def checkTime(reg):
             continue
 
         else:
-           
+            print(f"\t\t- Offset: {offset}\n")
+
             if abs(offset) > check_time_limit:
                 error = f"\nThe system clock is more than {check_time_limit} seconds off, \
                             \nwhich is specified by registry parameter 'regpath" + "{CHECK_TIME_LIMIT}" + "'."
@@ -572,7 +578,7 @@ def checkTime(reg):
             break
 
 
-            # print(f"Offset: {offset}")
+            # print(f"\t\t- Offset: {offset}\n")
 
     
     if failure == 1:
@@ -582,17 +588,6 @@ def checkTime(reg):
                 \ntime-checking by executing the command {checkTime_cmd} (not recommended)." )
     
     return failure
-
-
-
-
-    pq_size     = reg['pq_size']    # This does not change from registry
-    debug       = envVar['debug']   # Boolean
-    verbose     = envVar['verbose'] # Boolean
-    pq_clobber  = envVar['c']       # Boolean
-    pq_fast     = envVar['fast']    # Boolean
-    pq_slots    = envVar['pq_slots']    # This CAN change from registry
-
 
 
 ###############################################################################
@@ -689,10 +684,8 @@ def callQueueCreate(q_size, q_slots, clobber, verbose, debug, fast, q_path):
 def make_pq(reg, envVar):
 
     # need the number of slots to create
-    pq_size     = reg['pq_size']          # This does not change from registry
-    pq_slots    = reg['pq_slots']    # This does not change from registry
-    if pq_slots == "default":
-        pq_slots= int(pq_size / 57344)  # divide by 56K
+    pq_size     = reg['pq_size']            # This does not change from registry
+    pq_slots    = reg['pq_slots']           # This does not change from registry
 
     debug       = envVar['debug']       # Boolean
     verbose     = envVar['verbose']     # Boolean
@@ -785,7 +778,7 @@ def start(reg, envVar):
         print("\n >> start(): 2. Starting the LDM server...\n")
         
         ldmd_cmd += f" > {pid_file}"
-        print(ldmd_cmd)
+        # debug and print(ldmd_cmd)
         status = os.system(ldmd_cmd)
 
         if not util.isLdmdProcRunning(envVar):
@@ -797,7 +790,9 @@ def start(reg, envVar):
             # Check to make sure the LDM is running
             while not isRunning(reg, envVar, True) :
                 time.sleep(1)
-            
+
+        print("\n >> start(): 3. Started!\n")            
+
     return status
 
 
@@ -808,11 +803,10 @@ def start_ldm(reg, envVar):
     line_prefix = ""
 
     # Make sure there is no other server running
-    print("start_ldm(): 1. Checking for running LDM\n")
+    print("\nstart_ldm(): 1. Checking for running LDM\n")
     if isRunning(reg, envVar, True):
-        errmsg("start_ldm(): 1. There is another server running, start aborted! \n")
-        status = 1
-        print("\t --> ldm is running!")    
+        print("start_ldm(): 2. There is another server running... (start aborted) \n")
+        status = 1    
         return status
 
     # LDM not running
@@ -887,6 +881,7 @@ def stop_ldm(reg, envVar):
 
     if not isRunning(reg, envVar, True):
         #print("\nThe LDM server is NOT running or its process-ID is 'unavailable'")
+        print("\n\tstop_ldm(): LDM server NOT running...")
         return status
     
         
@@ -919,7 +914,7 @@ def stop_ldm(reg, envVar):
         print(f"\t - Unlinking pid file: {pid_filePath}\n")
         pid_filePath.unlink()
     
-    print("stop_ldm(): LDM server stopped!\n")
+    print("stop_ldm(): 2- LDM server stopped!\n")
     return status
 
 
@@ -1229,36 +1224,23 @@ def tailLog(reg):
     return status
 
 
- # clean up after an abnormal termination
 def clean(reg, env): 
 
     status = 0
     if isRunning(reg, env, True):
-        errmsg("The LDM system is running!  Stop it first.")
+        print("\n\tThe LDM system is running!  Stop it first.")
         status = 1
         return status
     
-    pidFile = env['pid_file']
-    
-    if util._doesFileExist(pidFile): 
-
-        try:
-            os.unlink(pidFile) 
-        except: 
-            errmsg(f"Couldn't remove LDM server PID-file '{pidFile}'")
-            status = 3
-            return status
-
-    else:
-        errmsg(f"pid file {pidFile} does not exist!")
-        status = 0
+    status = util.kill_ldmd_proc(env)
+    if status != 0:
+        print("clean(): Could not clean the ldmd processes...")
         return status
 
-    # here, successfully removed pidFile: proceed
-    ldmHome = env['ldmhome']
-    remove_cmd = f"rm -f {ldmHome}/MldmRpc_*"
-
-    status = os.system(remove_cmd)
+    # here, successfully removed pidFile: proceed or NOT?
+    ldmHome     = env['ldmhome']
+    remove_cmd  = f"rm -f {ldmHome}/MldmRpc_*"
+    status      = os.system(remove_cmd)
     
     return status
 

@@ -143,12 +143,12 @@ class LDMCommandsHandler:
 
 
 	# cortege not needed here. move its values (begin, end, etc.) to envVar
-	def execute(self, cmd, reg, envVar, envt):
+	def execute(self, cmd, reg, envVar, envt, cli):
 
 		status 				= 0
 		pqact_conf_option 	= envVar['pqact_conf_option']
 		ldmhome 			= envVar['ldmhome']
-		toLockOrNot 		= parseCli.CLIParser(ldmhome).isLockingRequired(cmd)
+		toLockOrNot 		= cli.isLockingRequired(cmd)
 		cmdToExecute = f"{cmd} " # {cortege}"
 		if toLockOrNot == True:
 			if envt.getLock() == -1:
@@ -246,7 +246,7 @@ def main():
 		#print("\n---------------- envVar ----------\n")
 		#print(envVar)
 		
-		LDMcommands.execute(cmd, regDico, envVar, envt)
+		LDMcommands.execute(cmd, regDico, envVar, envt, cliInst)
 
 		# last line:
 		exitMessage("")
