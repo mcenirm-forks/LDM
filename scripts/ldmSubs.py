@@ -3,23 +3,23 @@
 #             ldmd commands functions
 #
 #########################################################################
-import os
-from parseRegistry import RegistryParser
-from environHandler import LDMenvironmentHandler
-import psutil
-import shutil
-import time
 
-import subprocess
-from subprocess import PIPE
+# Standard Library imports
+import  os
+from    os import path
+from    pathlib import Path
+import  psutil
+import  shutil
+import  time
+import  subprocess
+from    subprocess import PIPE
+import  glob
+from    random import randrange
 
-import glob
-from os import path
-from pathlib import Path
-from random import randrange
-
-import ldmUtils
-
+# Local application imports
+import  ldmUtils as util
+from    parseRegistry import RegistryParser
+from    environHandler import LDMenvironmentHandler
 
 ###############################################################################
 # print the LDM configuration information
@@ -236,7 +236,7 @@ def getElapsedTimeOfServer(reg, envVar):
 
     if isRunning(reg, envVar, True):
         pid_file    = envVar["pid_file"] 
-        pid_time = ldmUtils._getMTime(pid_file)
+        pid_time = util._getMTime(pid_file)
         return time.time() - pid_time
 
     print("getElapsedTimeOfServer: LDM is NOT running!...")
@@ -335,16 +335,9 @@ def isRunning(reg, envir, ldmpingFlag):
     ip_addr                 = reg['ip_addr']
     envir['ldmd_running']   = False
 
-    ldmhome = os.environ.get("LDMHOME", None)
 
-    if ldmhome == None:
-        errmsg(f"\n\tLDMHOME is not set. Bailing out...\n")
-        exit(-1)
+    if util._getLdmdPid(pidFilename) != -1:   # valid pid found
 
-    # Ensure that the utilities of this version are favored
-    os.environ['PATH'] = ldmhome + "/bin:" + ldmhome + "/util:" + os.environ['PATH']
-
-    if ldmUtils._getLdmdPid(pidFilename) != -1:   # valid pid found
         running                 = True
         envir['ldmd_running']   = True
 
@@ -435,10 +428,10 @@ def newLog(reg, env):
 
 def removeOldProdInfoFiles(env, pid_file):
 
-    mtime = ldmUtils._getMTime(pid_file)
+    mtime = util._getMTime(pid_file)
     
     for file in glob.glob('.*.info'):
-        file_mTime = ldmUtils._getMTime(file)
+        file_mTime = util._getMTime(file)
 
         if file_mTime < mtime:
             remove_cmd = f"rm -f {file} 2>/dev/null"
@@ -737,20 +730,39 @@ def start(reg, envVar):
 
     status      = 0     # default success
 
+    ip_addr     = reg["ip_addr"]
+    port        = reg["port"]
     debug       = envVar["debug"]
     verbose     = envVar["verbose"]
     ldmd_conf   = envVar["ldmd_conf"]
-    ip_addr     = reg["ip_addr"]
-    port        = reg["port"]
+    pid_file    = envVar['pid_file']
+
     max_clients = envVar["max_clients"]
+    max_clients_opt = ""
+    if max_clients == None:
+        max_clients = reg["max_clients"]
+        max_clients_opt = f" -M {max_clients}"
+
+    max_latency_opt = ""
     max_latency = envVar["max_latency"]
+    if max_latency == None:
+        max_latency = reg["max_latency"]
+        max_latency_opt = f" -m {max_latency}"
+
     offset      = envVar["server_time_offset"]
+    if offset == None:
+        offset = reg["server_time_offset"]
+
     pq_path     = envVar["pq_path"]
-    pid_file    = envVar["pid_file"]
+    if pq_path == None:
+        pq_path = reg["pq_path"]
+
+
 
     # Build the 'ldmd' command line
-    ldmd_cmd = f"ldmd -I {ip_addr} -P {port} -M {max_clients} -m {max_latency} -o {offset} -q {pq_path}"
+    ldmd_cmd = f"ldmd -I {ip_addr} -P {port} {max_clients_opt} {max_latency_opt} -o {offset} -q {pq_path}"
 
+    #print(    ldmd_cmd   )
     if debug:
         ldmd_cmd += " -x -v "
     
@@ -761,7 +773,7 @@ def start(reg, envVar):
     # Check the ldm(1) configuration-file
     print(f" >> start(): 1. Checking LDM configuration-file ({ldmd_conf})...\n")            
 
-    ldmd_cmd2 = f"{ldmd_cmd} -nvl- {ldmd_conf} 2>&1 "
+    ldmd_cmd2 = f"{ldmd_cmd} -nvl- {ldmd_conf} 2>&1 1>/dev/null "
 
     output = os.system(ldmd_cmd2) >> 8
     # print(f"\noutput: {output}\n")   # : 0 means no problem
@@ -773,10 +785,11 @@ def start(reg, envVar):
         print("\n >> start(): 2. Starting the LDM server...\n")
         
         ldmd_cmd += f" > {pid_file}"
+        print(ldmd_cmd)
         status = os.system(ldmd_cmd)
-        
-        if status:
-            os.unlink(pid_file)
+
+        if not util.isLdmdProcRunning(envVar):
+            util.kill_ldmd_proc(env)
             errmsg(" >> start(): 2. Could not start LDM server")
             status = 1
         
@@ -814,11 +827,11 @@ def start_ldm(reg, envVar):
     # product-queue AND surfQueue (if applicable) OK
 
     # Ensure that the upstream LDM database doesn't exist
-    print("\nstart_ldm(): 3. Attempting to delete upstream LDM database...")
+    # debug and print("\nstart_ldm(): 3. Attempting to delete upstream LDM database...")
     os.system("uldbutil -d")
         
     # Check the pqact(1) configuration-file(s)
-    print("\nstart_ldm(): 4. Checking pqact(1) configuration-file(s)...")
+    # debug and print("\nstart_ldm(): 4. Checking pqact(1) configuration-file(s)...")
  
     if not are_pqact_confs_ok(reg, envVar):
         errmsg("")
@@ -873,13 +886,13 @@ def stop_ldm(reg, envVar):
     pid_file    = envVar['pid_file']
 
     if not isRunning(reg, envVar, True):
-        errmsg("\nThe LDM server is NOT running or its process-ID is 'unavailable'")
+        #print("\nThe LDM server is NOT running or its process-ID is 'unavailable'")
         return status
     
         
     # kill the server and associated processes
     print("\nstop_ldm(): 1 - Stopping the LDM server...\n")
-    rpc_pid = ldmUtils._getLdmdPid(pid_file)    # already validated in isRunning()
+    rpc_pid = util._getLdmdPid(pid_file)    # already validated in isRunning()
 
     kill_rpc_pid_cmd = f"kill {rpc_pid}"
     print(f"\t - kill RPC pid:  {kill_rpc_pid_cmd}")
@@ -889,6 +902,8 @@ def stop_ldm(reg, envVar):
     while isRunning(reg, envVar, True): 
         print(f"\t - LDM is still running... Sleep 1 sec.")
         time.sleep(1)
+
+    #if not isLdmdProcRunning(envVar):
 
     print("\t - LDM has stopped running... ")
 
@@ -941,16 +956,15 @@ def are_pqact_confs_ok(reg, envVar):
         # No "pqact" configuration-file was specified on the command-line.
         # Set "@pathnames" according to the "pqact" configuration-files
         # specified in the LDM configuration-file.
-        pathnames = ldmUtils.readPqActConfFromLdmConf(ldmd_conf)
+        pathnames = util.readPqActConfFromLdmConf(ldmd_conf)
 
         # if none found, use the default:
         if not pathnames:
-            print(f"\n\t ... using default instead: {pqact_conf}\n")
+            #print(f"\n\t ... using default instead: {pqact_conf}\n")
             pathnames = (pqact_conf,)
     
 
     # At this point, are_ok == 1
-    
     for pathname in pathnames:
         
         # Examine the "pqact" configuration-file for leading spaces. WHY?
@@ -997,11 +1011,11 @@ def are_pqact_confs_ok(reg, envVar):
         
             if "Successfully read" in line:     
                 read_ok = True
-                print(f"\t{pathname}: syntactically correct\n") 
+                print(f"\t- pqact_conf: {pathname}: syntactically correct\n") 
                 return read_ok
 
 
-        print(f"{pathname} has problems:\n")
+        print(f"\t- pqact_conf: {pathname} has problems:\n")
         are_ok = False
 
     # for pathname in pathnames: end loop
@@ -1081,7 +1095,7 @@ def resetRegistry():
     if os.system("regutil -R"):     # check return status here
         errmsg("Couldn't reset LDM registry")
         return status
-        
+
     status = 0
     
     return status
@@ -1152,11 +1166,11 @@ def isSurfQueueOk(reg):
                 #print(f"\nisSurfQueueOk(): The surf-queue {surfPath} specified in ldmd.conf is valid.")
                 return True
 
-    # This scenario is not to be considered. =================================================
+    # This scenario is not to be considered: found more than 1  ====================================
     # if foundOne > 1:
     #     print(f"isSurfQueueOk 3: found {foundOne} 'EXEC pqsurf path' valid entries in ldmd.conf.")
     #     return True
-    # ========================================================================================
+    # ==============================================================================================
 
 
 
@@ -1224,9 +1238,9 @@ def clean(reg, env):
         status = 1
         return status
     
-    pidFile = reg['pid_file']
+    pidFile = env['pid_file']
     
-    if _doesFileExist(pidFile): 
+    if util._doesFileExist(pidFile): 
 
         try:
             os.unlink(pidFile) 

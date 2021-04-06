@@ -771,7 +771,7 @@ AC_CONFIG_FILES([
     rtstats/Makefile
     scour/Makefile
     scour/scour
-    scripts/ldmadmin.pl
+    scripts/ldmadmin
     scripts/ldmfail
     scripts/Makefile
     scripts/netcheck

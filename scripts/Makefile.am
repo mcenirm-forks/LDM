@@ -10,7 +10,7 @@ EXTRA_DIST		= \
     ldm7PreInstall \
     ldm7Install \
     ldmadmin.1.in \
-    ldmadmin.pl.in \
+    ldmadmin.in \
     ldmfail.in \
     netcheck.in \
     netcheck.conf \
@@ -29,10 +29,6 @@ nodist_bin_SCRIPTS	= \
 nodist_man1_MANS	= ldmadmin.1
 dist_man1_MANS	        = netcheck.1 syscheck.1 ldmfail.1 wasReceived.1
 CLEANFILES              = ldmadmin ldmadmin.1
-
-ldmadmin:	ldmadmin.pl
-	../regutil/substPaths <$? >$@.tmp
-	mv $@.tmp $@
 
 ldmadmin.1:	$(srcdir)/ldmadmin.1.in
 	../regutil/substPaths <$? >$@.tmp

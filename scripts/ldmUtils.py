@@ -1,5 +1,8 @@
+
+# Standard Library imports
 import  os
 from    os import path
+import  sys
 import  psutil
 from    filelock import Timeout, FileLock
 import  subprocess
@@ -10,9 +13,11 @@ from    random import randrange
 from    uptime import uptime
 import  time
 
+# Local application imports
 import  ldmSubs     as sub
 from    parseRegistry import RegistryParser
 from    environHandler import LDMenvironmentHandler
+
 
 ###############################################################################
 # Helper functions: they star with _undescore_ to distinguish them from 
@@ -259,11 +264,11 @@ def _getLdmdPid(pidFilename):
     status = -1
 
     if not _doesFileExist(pidFilename) or os.stat(pidFilename).st_size == 0:
-        print(f"\nisRunning(): ldmd NOT running ({pidFilename} does not exist.)\n")
+        # debug and print(f"\nisRunning(): ldmd NOT running ({pidFilename} does not exist.)\n")
         return status
 
     if os.stat(pidFilename).st_size == 0:
-        print(f"\nisRunning(): ldmd NOT running ({pidFilename} exists but is empty!)\n")
+        # debug and print(f"\nisRunning(): ldmd NOT running ({pidFilename} exists but is empty!)\n")
         return status
 
     # Retrieve ldmd process id :
@@ -284,6 +289,7 @@ def _getLdmdPid(pidFilename):
             return pid
 
     return status
+
 
 ###############################################################################
 # Check a queue-file for errors
@@ -700,6 +706,8 @@ def newMetrics(reg):
 def readPqActConfFromLdmConf(ldmdConfPathname):
 
     pqactConfs = ()
+
+    print(ldmdConfPathname)
     f = open(ldmdConfPathname, "r")
     for line in f:
         if not (line.lower().startswith("exec") and "pqact" in line):
@@ -797,7 +805,7 @@ def copyCliArgsToEnvVariable(envVar, cliDico):
             'M': 'max_clients',
             'q': 'pq_path',
             'o': 'server_time_offset',
-            'conf_file': 'ldmd_conf',
+            'conf_file': 'ldmd_conf', 
             'v': 'verbose',
             'x': 'debug',
             'f': '',           # concerns both : force and feedset but they are disjoint (2 different commands)
@@ -832,7 +840,6 @@ def copyCliArgsToEnvVariable(envVar, cliDico):
 
         mappedAttribute = mapArgsToNames[key]
         envVar[mappedAttribute] = val
-
 
 
 def checkDiskSpace(pq_path, pqSize):
@@ -872,19 +879,84 @@ def checkDiskSpace(pq_path, pqSize):
     # 1K block
     return rootAvailSize * 1024 > pq_size + residualMem
 
+def kill_ldmd_proc(env):
+    
+    status = 0
+    ldmd_processes      = "ldmd -I"
+    ps_grep_ldmd_cmd    = f"ps -ef | grep '{ldmd_processes}'"
+    try:
+        proc = subprocess.check_output(ps_grep_ldmd_cmd, shell=True ).decode()   
+        for line in proc.split("\n"):
+            if not line or "grep" in line:
+                continue
+
+            proc_id = line.split()[1]
+            kill_cmd= f"kill -9 {proc_id}"
+            proc    = subprocess.check_output( kill_cmd, shell=True )
+
+    except Exception as e:
+        print(e)
+        errmsg(f"'kill_ldmd_proc(): command: {ps_grep_ldmd_cmd} or {kill_cmd} failed! ")
+        status = -1
+        return status
+
+    pidFilename = env['pid_file']
+    if _doesFileExist(pidFilename):
+        os.unlink(pidFilename)
+
+    return status
+
+
+def isLdmdProcRunning(env):
+    
+    ldmd_processes      = "ldmd -I"
+    ps_grep_ldmd_cmd    = f"ps -ef | grep '{ldmd_processes}'"
+
+    ldmd_procs_found    = 0
+    try:
+        proc = subprocess.check_output(ps_grep_ldmd_cmd, shell=True ).decode()   
+        for line in proc.split("\n"):
+            if not line or "grep" in line:
+                continue
+            ldmd_procs_found += 1
+
+    except Exception as e:
+        print(e)
+        errmsg(f"'isLdmdProcRunning(): command: {ps_grep_ldmd_cmd} failed! ")
+
+    pidFilename = env['pid_file']
+    return ldmd_procs_found > 0 and _doesFileExist(pidFilename)
+
+
 
 if __name__ == "__main__":
 
-    #os.system('clear')
+    os.system('clear')
 
     regHandler = RegistryParser()
-    envHandler = LDMenvironmentHandler()
+
+
+    # configure.ac replaces "@variable@"with actual value:
+    ldmHome     = environ.get("LDMHOME", "/home/miles/dev")
+    ldm_port    = "1.0.0.0"
+    ldm_version = "6.13.14"
+
+    # For testing purposes:
+    ldmHome     = "/home/miles/dev" # <<---- remove in production setting !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    exec_prefix = ""
+
+    envHandler = LDMenvironmentHandler(exec_prefix, ldmHome, ldm_port, ldm_version)
 
     registryDict = regHandler.getRegistryEntries()
     envVarDict = envHandler.getEnvVarsDict()
     
     envHandler.prettyPrintEnvVars()
     regHandler.prettyPrintRegistry()
+
+    kill_ldmd_proc(envVarDict)
+    print(ldmd_procs_stopped(envVarDict))
+
+    exit(0)
 
     #print(_get_date()) DONE
 
@@ -924,9 +996,9 @@ if __name__ == "__main__":
     #ldmadmin_pqactHUP(envVarDict)   # DONE - can only test if pqact process(es) is(are) running
     #expression = readMem()
 
-    begin = 20210306
-    end =  20220306
-    metrics_file = "toto.txt"
+    begin       = 20210306
+    end         =  20220306
+    metrics_file= "toto.txt"
     eval("plotMetrics(begin, end, metrics_file, envVarDict)")
 
     pq_size = registryDict['pq_size']

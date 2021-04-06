@@ -30,40 +30,43 @@
 # relocated binary RPM installations.
 
 
+# Standard Library imports
+import  os
+from    os       import environ, system
+from    filelock import Timeout, FileLock
+import  psutil
+import  time
 
-import os
-from filelock import Timeout, FileLock
-import psutil
-import time
-
-class LDMenvironmentHandler:
+class LDMenvironmentHandler():
 
     verbose = True
 
-    def __init__(self):
+    def __init__(self, exec_prefix, ldmhome, ldm_port, ldm_version):
         
         # Set the $ldmhome variable from the LDMHOME environment variable if available;
         # otherwise, use the configure(1)-determined value. This is necessary for
         # relocated binary RPM installations.
-        
-        ldmhome = os.environ.get("LDMHOME", "/home/miles/projects/ldm")
 
         # Ensure that the utilities of this version are favored
-        os.environ['PATH'] = f"{ldmhome}/bin:{ldmhome}/util:{os.environ['PATH']}"
+        path = environ.get("PATH")
+        environ['PATH'] = f"{exec_prefix}:{ldmhome}/util:{path}";
 
         unameDict = os.uname()
         lockFile = f"{ldmhome}/.ldmadmin.lck"
         pidFile  = f"{ldmhome}/ldmd.pid"
         
-        self.envVariables = { "progname": "ldmadmin", 
-                              "ldmhome": ldmhome, 
-                              "os": unameDict.sysname, 
-                              "release": unameDict.release,
-                              "lock_file": lockFile, 
-                              "pid_file": pidFile, 
-                              "lock": None,
-                              "lock_acquired" : False,
-                              "pqact_conf_option" : 0}
+        self.envVariables = { "progname"            : "ldmadmin", 
+                              "ldmhome"             : ldmhome, 
+                              "os"                  : unameDict.sysname, 
+                              "release"             : unameDict.release,
+                              "version"             : ldm_version,
+                              "port"                : ldm_port,
+                              "lock_file"           : lockFile, 
+                              "pid_file"            : pidFile, 
+                              "lock"                : None,
+                              "lock_acquired"       : False,
+                              "pqact_conf_option"   : 0
+                            }
         
     def getEnvVarsDict(self):
         return self.envVariables
@@ -77,7 +80,7 @@ class LDMenvironmentHandler:
     # Resets the LDM registry.
     def resetRegistry(self):
         status = 1  # default failure
-        ret = os.system("regutil -R")
+        ret = system("regutil -R")
         if not ret == 0:
             errmsg("Couldn't reset LDM registry")
         else:
@@ -146,10 +149,19 @@ class LDMenvironmentHandler:
 
 if __name__ == "__main__":
 
-    os.system('clear')
+    system('clear')
+
+    # configure.ac replaces "@variable@"with actual value:
+    ldmHome     = environ.get("LDMHOME", "/home/miles/dev")
+    ldm_port    = "1.0.0.0"
+    ldm_version = "6.13.14"
+
+    # For testing purposes:
+    ldmHome     = "/home/miles/dev" # <<---- remove in production setting !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    exec_prefix = ""
 
     # Testing...
-    c = LDMenvironmentHandler()
+    c = LDMenvironmentHandler(exec_prefix, ldmHome, ldm_port, ldm_version)
 #    c.getLock()
     dico = c.getEnvVarsDict()
     
