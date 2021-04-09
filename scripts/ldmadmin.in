@@ -57,7 +57,8 @@ ldm_port 	= "388"				# <<---- remove in production setting !!!!!!!!!!!!!!!!!!!!!
 ldm_version = "6.13.14"			# <<---- remove in production setting !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 # Set sys.path to locate python modules in $ldmhome/lib
-sys.path.append(f'{ldmhome}/lib')
+ldmhome_lib = f"{ldmhome}/lib"
+sys.path.append(ldmhome_lib)
 
 
 # Temporarily:
@@ -106,34 +107,34 @@ class LDMCommandsHandler:
 
 	def cmdDispatcher(self, cmd, reg, env):
 
-		ldmCommandsDict={
-	    	"start": 				"sub.start_ldm(reg, env)",
-	    	"stop":					"sub.stop_ldm(reg, env)",
-	        "restart": 				"sub.restart(reg, env)",
+		ldmCommandsDict = {
+	    	"start": 				"sub.start_ldm(reg, env)",	# checked without params
+	    	"stop":					"sub.stop_ldm(reg, env)",	# checked: OK
+	        "restart": 				"sub.restart(reg, env)",	# checked without params
 	        "mkqueue":				"sub.make_pq(reg, env)",
 	        "delqueue":				"sub.del_pq(reg, env)",
 	        "mksurfqueue":			"sub.make_surf_q(reg, env)",
 	        "delsurfqueue":			"sub.del_surf_pq(reg, env)",
-	        "newlog":				"sub.newLog(reg, env)",
+	        "newlog":				"sub.newLog(reg, env)",		# checked: OK
 	        "scour":				"sub.scour(reg)",
-	        "isrunning":			"sub.isRunning(reg, env, pingFlag)",
-	        "checkinsertion": 		"sub.check_insertion(reg)",
+	        "isrunning":			"sub.isRunning(reg, env, pingFlag)", 	# checked: OK
+	        "checkinsertion": 		"sub.check_insertion(reg)",			
 	        "vetqueuesize":			"sub.vetQueueSize(reg, env)",
-	        "check":				"sub.checkLdm(reg, env)",
-	        "watch":				"sub.watch(reg, env)",
-	        "pqactcheck":			"sub.pqactcheck(reg, env)",
+	        "check":				"sub.checkLdm(reg, env)",	# checked: OK
+	        "watch":				"sub.watch(reg, env)",		# checked: OK
+	        "pqactcheck":			"sub.pqactcheck(reg, env)", # checked: OK
 	        "pqactHUP":				"util.pqactHUP(env)",
-	        "queuecheck":			"sub.queueCheck(reg, env)",	        
-	        "config":				"sub.ldmConfig(reg, env)",
-	        "log":					"sub.pageLog(reg)",
-	        "tail":					"sub.tailLog(reg)",
-	        "clean":				"sub.clean(reg, env)", 
-	        "checktime":			"sub.checkTime(reg)",
-	        "printmetrics":			"util.printMetrics(reg)",
-	        "addmetrics":			"util.addMetrics(reg)",
-	        "plotmetrics":			"util.plotMetrics(reg, env)",
-	        "newmetrics":			"util.newMetrics(reg)",
-	        "updategempaktables": 	"sub.updateGempakTables()"
+	        "queuecheck":			"sub.queueCheck(reg, env)",	# checked: OK        
+	        "config":				"sub.ldmConfig(reg, env)",	# checked: OK
+	        "log":					"sub.pageLog(reg)",			# checked: OK
+	        "tail":					"sub.tailLog(reg)",			# checked: OK
+	        "clean":				"sub.clean(reg, env)", 		# checked: OK
+	        "checktime":			"sub.checkTime(reg)",		# checked: OK
+	        "printmetrics":			"util.printMetrics(reg)",	# checked: OK
+	        "addmetrics":			"util.addMetrics(reg)",	
+	        "plotmetrics":			"util.plotMetrics(reg, env)", 	# checked: NO matching data
+	        "newmetrics":			"util.newMetrics(reg)",			# checked: NO
+	        "updategempaktables": 	"sub.updateGempakTables()"	# checked: NO
     	}
 
 		pingFlag = True
@@ -176,8 +177,11 @@ def main():
 	system('clear')
 	debug = True #False
 
+	# Should not be running as root - but permitted:
+	util.checkWhoIAm()
+
 	
-	regParser 	= regHdler.RegistryParser()
+	regParser 	= regHdler.RegistryParser(ldmhome)
 	envt		= envHdler.LDMenvironmentHandler(exec_prefix, ldmhome, ldm_port, ldm_version)
 
 	# Registry dict:
@@ -192,7 +196,7 @@ def main():
 	LDMcommands 	= LDMCommandsHandler( cmdsDico )	# instance of 'this'
 	
 	
-
+	debug = 0
 	if debug:
 		LDMcommands.displayRegistryAndEnv(regParser, envt)
 

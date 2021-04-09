@@ -27,6 +27,7 @@
 # Third party imports
 from xml.dom.minidom import parse
 import xml.dom.minidom
+import re
 
 # Singleton Pattern
 
@@ -84,24 +85,33 @@ class RegistryParser(object):
 
 
 
-    def __new__(self):
+    def __new__(self, ldmhome):
         if self._instance is None:
             #print('Creating ParseRegistry singleton:')
             self._instance = super(RegistryParser, self).__new__(self)
             # Put any initialization here.
 
-            # Where is the registry??????????????????????????????
+            registry_xml = f"{ldmhome}/etc/registry.xml"
             self.DOMTree = xml.dom.minidom.parse("registry.xml") 
             #print(self.registryEntries)  
             
+            missingXmlElements=list()
+
             for entry, val in self.registryEntries.items():
                 #print(f"ParseRegistry: {entry}, {val}")
                 xmlElem = list(val.keys())[0]
                 rank = list(val.values())[0]
 
-                tagName = self.DOMTree.getElementsByTagName(xmlElem)[rank].firstChild.data
-                #print(f"\t --> {entry}: {tagName}  ")
-                
+                try:
+                    tagName = self.DOMTree.getElementsByTagName(xmlElem)[rank].firstChild.data
+                    #print(f"\t --> {entry}: {tagName}  ")
+                except Exception as e:
+
+                    print(f"\n\t{e}")
+                    print(f"\tPlease check XML element: {xmlElem} ")
+                    missingXmlElements.append(xmlElem)
+                    continue
+
                 self.registryEntries[entry]= tagName
 
                 # special handling
@@ -114,12 +124,25 @@ class RegistryParser(object):
 
                     self.registryEntries[entry] = expandedSize
 
+                # 2. Validate the ip_addr. Set default to 0.0.0.0
+                regex = "^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$"
+                ipAddress = tagName
+                if entry == "ip_addr" and not re.search(regex, ipAddress):
+                    print(f"\n\tWARNING: ip_addr ({ipAddress}) is incorrected! Defaulted to '0.0.0.0'\n")
+                    self.registryEntries[entry]= "0.0.0.0"             
 
-                # 2.
+                # 3.
                 if entry == "ntpdate_servers" :
                     self.registryEntries[entry]= self.registryEntries[entry].split()
 
-            # 3. Update pq_slots value if default
+
+            # Check for missing atrributes values.
+            if missingXmlElements:
+                print(f"\n\n\tMissing attributes values in the registry.xml:\n{missingXmlElements}\n")
+                print("\tPlease fix the relevant attributes and retry. Exiting!...\n")
+                exit(0)
+
+            # 4. Update pq_slots value if default
             reg = self.registryEntries
             pq_size     = reg['pq_size']  
             pq_slots    = reg['pq_slots']         
@@ -134,10 +157,10 @@ class RegistryParser(object):
                 self.registryEntries['pq_slots'] = pq_slots
             # else: keep current 'pq_slots' numeric value
 
-            # 4. Convert all numeral strings to numbers:
+            # 5. Convert all numeral strings to numbers:
             self.stringToInt(self)
 
-            # 5.
+            # 6.
             # Check the hostname for a fully-qualified version.
             # More validation may be required
             if self.registryEntries['hostname'].startswith("."):
@@ -148,30 +171,36 @@ class RegistryParser(object):
                 print(errmsg)
                 exit(0);
 
+
         return self._instance
         
 
     def stringToInt(self):
 
-        try:
-            self.registryEntries["delete_info_files"]           = int(self.registryEntries["delete_info_files"])
-            self.registryEntries["insertion_check_period"]      = int(self.registryEntries["insertion_check_period"])
-            self.registryEntries["check_time_enabled"]          = int(self.registryEntries["check_time_enabled"])
-            self.registryEntries["check_time_limit"]            = int(self.registryEntries["check_time_limit"])
-            self.registryEntries["warn_if_check_time_disabled"] = int(self.registryEntries["warn_if_check_time_disabled"])
-            self.registryEntries["ntpdate_timeout"]             = int(self.registryEntries["ntpdate_timeout"])
-            self.registryEntries["num_logs"]                    = int(self.registryEntries["num_logs"])
-            self.registryEntries["log_rotate"]                  = int(self.registryEntries["log_rotate"])
-            self.registryEntries["num_metrics"]                 = int(self.registryEntries["num_metrics"])
-            self.registryEntries["max_clients"]                 = int(self.registryEntries["max_clients"])
-            self.registryEntries["max_latency"]                 = int(self.registryEntries["max_latency"])
-            self.registryEntries["port"]                        = int(self.registryEntries["port"])
-            self.registryEntries["server_time_offset"]          = int(self.registryEntries["server_time_offset"])
-            self.registryEntries["fmtp_retx_timeout"]           = int(self.registryEntries["fmtp_retx_timeout"])
-            
-        except Exception as e:
-            errmgs(e)
+        relevantEntries = [
+            "delete_info_files",
+            "insertion_check_period",
+            "check_time_enabled",
+            "check_time_limit",
+            "warn_if_check_time_disabled",
+            "ntpdate_timeout",
+            "num_logs",
+            "log_rotate",
+            "num_metrics",
+            "max_clients",
+            "max_latency",
+            "port",
+            "server_time_offset",
+            "fmtp_retx_timeout"
+        ]
+        
+        for attr in relevantEntries: 
+            try:
+                self.registryEntries[attr]           = int(self.registryEntries[attr])
+            except Exception as e:
+                print(e)
 
+        
     # More validation may be required
     def convertSize(self, pq_size):
 
@@ -210,5 +239,6 @@ class RegistryParser(object):
 
 if __name__ == "__main__":
 
-    c = RegistryParser()
+    ldmhome = "/home/miles/projects/ldm"
+    c = RegistryParser(ldmhome)
     c.prettyPrintRegistry()

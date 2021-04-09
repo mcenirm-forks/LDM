@@ -52,12 +52,8 @@ def ldmConfig(reg, env):
     print(f"\treconciliation mode:   { reg['reconMode'] }")
     print(f"\tpqsurf(1) path:        { reg['surf_path'] }")
     print(f"\tpqsurf(1) size:        { reg['surf_size'] }")
-    if reg['ip_addr'] == None:
-        reg['ip_addr'] = "all"
-    print(f"\tIP address:            { reg['ip_addr'] }")       #, length({ reg['ip_addr) ? { reg['ip_addr : "all")
-    if reg['port'] == None:
-        reg['port'] = "388"
-    print(f"\tport:                  { reg['port'] }")          #, length({ reg['port) ? { reg['port : 388) 
+    print(f"\tIP address:            { reg['ip_addr'] }")
+    print(f"\tport:                  { reg['port'] }")
     print(f"\tmaximum clients:       { reg['max_clients'] }")
     print(f"\tmaximum latency:       { reg['max_latency'] }")
     print(f"\ttime-offset limit:     { reg['server_time_offset'] }")    
@@ -349,7 +345,7 @@ def isRunning(reg, envir, ldmpingFlag):
 
         running                 = True
         envir['ldmd_running']   = True
-
+        print("\n\t\t LDM server is running...\n")
         return running
 
     # The following test is incompatible with the use of a proxy
@@ -410,8 +406,8 @@ def newLog(reg, env):
 
     status      = 1      # default failure
 
-    logfile     = envVar['log_file']
-    numLogs     = envVar['num_logs']
+    logFile     = reg['log_file']
+    numLogs     = reg['num_logs']
 
     # Rotate the log file
 
@@ -600,14 +596,11 @@ def deleteAQueue(reg, envVar, queuePath, queueName):
 
     # Check to see if the server is running.
     if isRunning(reg, envVar, True):
-        errmsg("deleteQueue(): The LDM is running, cannot delete the queue")
         return status
-
     
     # Check if queue exists
-    if not _doesFileExist(queuePath):
-        errmsg(f"deleteQueue(): {queueName}-queue '{queuePath}' doesn't exist");
-        status = 0
+    if not util._doesFileExist(queuePath):
+        status = 2
         return status
     
     # Delete the queue
@@ -615,7 +608,7 @@ def deleteAQueue(reg, envVar, queuePath, queueName):
         os.unlink(queuePath)
         status = 0
     except:
-        errmsg(f"deleteQueue(): Couldn't delete {queueName}-queue:  '{queuePath}'")
+        status = 3
         
     return status
 
@@ -626,9 +619,22 @@ def deleteAQueue(reg, envVar, queuePath, queueName):
 
 def del_pq(reg, envVar):
 
-    queuePath   = reg['pq_path']
-    return deleteAQueue(reg, envVar, "product")
+    pqueuePath   = reg['pq_path']
+    status = deleteAQueue(reg, envVar, pqueuePath, "product")
 
+    if status == 1:
+        errmsg("deleteQueue(): The LDM is running, cannot delete the queue")
+    else:
+        if status == 3:
+            errmsg(f"deleteQueue(): Couldn't delete {queueName}-queue:  '{queuePath}'")
+        else:
+            if status == 2:
+                print(f"\n\tproduct-queue '{pqueuePath}' doesn't exist...");
+            else:
+                if status == 0:
+                    print(f"\n\tproduct queue {pqueuePath} deleted.")
+                else:
+                    print(f"\n\tproduct queue {pqueuePath} NOT deleted.")
 
 ###############################################################################
 # Deletes a surf-queue
@@ -636,8 +642,22 @@ def del_pq(reg, envVar):
 
 def del_surf_pq(reg, envVar):
 
-    queuePath   = reg['surf_path']
-    return deleteAQueue(reg, envVar, "surf")
+    surfqueuePath   = reg['surf_path']
+    status = deleteAQueue(reg, envVar, surfqueuePath , "surf")
+
+    if status == 1:
+        errmsg("deleteQueue(): The LDM is running, cannot delete the queue")
+    else:
+        if status == 3:
+            errmsg(f"deleteQueue(): Couldn't delete surf-queue:  '{surfqueuePath}'")
+        else:    
+            if status == 2:
+                print(f"\n\tsurf-queue '{surfqueuePath}' doesn't exist...");
+            else:
+                if status == 0:
+                    print(f" surf queue {surfqueuePath} deleted.")
+                else:
+                    print(f" surf queue {surfqueuePath} NOT deleted.")
 
 
 ###############################################################################
@@ -750,8 +770,6 @@ def start(reg, envVar):
     if pq_path == None:
         pq_path = reg["pq_path"]
 
-
-
     # Build the 'ldmd' command line
     ldmd_cmd = f"ldmd -I {ip_addr} -P {port} {max_clients_opt} {max_latency_opt} -o {offset} -q {pq_path}"
 
@@ -764,18 +782,18 @@ def start(reg, envVar):
     
     
     # Check the ldm(1) configuration-file
-    print(f" >> start(): 1. Checking LDM configuration-file ({ldmd_conf})...\n")            
+    print(f"start: 3. Checking LDM configuration-file ({ldmd_conf})...\n")            
 
     ldmd_cmd2 = f"{ldmd_cmd} -nvl- {ldmd_conf} 2>&1 1>/dev/null "
 
     output = os.system(ldmd_cmd2) >> 8
     # print(f"\noutput: {output}\n")   # : 0 means no problem
     if output:
-        print(f" >> start(): 1. Problem with LDM configuration-file\n")
+        print(f" >> start: 3.1. Problem with LDM configuration-file\n")
         status = 1
     
     else:
-        print("\n >> start(): 2. Starting the LDM server...\n")
+        print("\nstart: 4. Starting the LDM server...\n")
         
         ldmd_cmd += f" > {pid_file}"
         # debug and print(ldmd_cmd)
@@ -783,7 +801,7 @@ def start(reg, envVar):
 
         if not util.isLdmdProcRunning(envVar):
             util.kill_ldmd_proc(env)
-            errmsg(" >> start(): 2. Could not start LDM server")
+            errmsg(" >> start: 4.1. Could not start LDM server")
             status = 1
         
         else:
@@ -791,7 +809,7 @@ def start(reg, envVar):
             while not isRunning(reg, envVar, True) :
                 time.sleep(1)
 
-        print("\n >> start(): 3. Started!\n")            
+        print("\nstart(): 5. Started!\n")            
 
     return status
 
@@ -803,16 +821,16 @@ def start_ldm(reg, envVar):
     line_prefix = ""
 
     # Make sure there is no other server running
-    print("\nstart_ldm(): 1. Checking for running LDM\n")
+    print("\nstart: 1. Checking for running LDM\n")
     if isRunning(reg, envVar, True):
-        print("start_ldm(): 2. There is another server running... (start aborted) \n")
+        print("start: 2. There is another server running... (start aborted) \n")
         status = 1    
         return status
 
     # LDM not running
 
     # Check the queues
-    print("start_ldm(): 2. Checking queues\n")
+    print("start: 2. Checking queues\n")
     if not areQueuesOk(reg):
         errmsg("LDM not started!")
         status = 1
@@ -881,12 +899,12 @@ def stop_ldm(reg, envVar):
 
     if not isRunning(reg, envVar, True):
         #print("\nThe LDM server is NOT running or its process-ID is 'unavailable'")
-        print("\n\tstop_ldm(): LDM server NOT running...")
+        print("\nstop 0: LDM server NOT running...")
         return status
     
         
     # kill the server and associated processes
-    print("\nstop_ldm(): 1 - Stopping the LDM server...\n")
+    print("\nstop: 1. Stopping the LDM server...\n")
     rpc_pid = util._getLdmdPid(pid_file)    # already validated in isRunning()
 
     kill_rpc_pid_cmd = f"kill {rpc_pid}"
@@ -914,7 +932,7 @@ def stop_ldm(reg, envVar):
         print(f"\t - Unlinking pid file: {pid_filePath}\n")
         pid_filePath.unlink()
     
-    print("stop_ldm(): 2- LDM server stopped!\n")
+    print("stop: 2. LDM server stopped!\n")
     return status
 
 
@@ -1006,7 +1024,7 @@ def are_pqact_confs_ok(reg, envVar):
         
             if "Successfully read" in line:     
                 read_ok = True
-                print(f"\t- pqact_conf: {pathname}: syntactically correct\n") 
+                print(f"\t- pqact_conf: syntactically correct. ({pathname}) \n") 
                 return read_ok
 
 
@@ -1067,14 +1085,18 @@ def getQueueStatus(queue_path, name):       # name e.g. "surf"
 # check product-queue for corruption: return True if corrupted
 def queueCheck(reg, env):
     
+    statusOk = False
+    print(f"\n\tqueueCheck(): LDM status check")
     if isRunning(reg, env, True):     
-        errmsg("queuecheck: The LDM system is running. queuecheck aborted")
-        status = 1
+        errmsg("queuecheck(): The LDM system is running! ('queuecheck' aborted)")
     
     else:
-        status = not isProductQueueOk(reg, env)
+
+        statusOk = isProductQueueOk(reg)
+        if statusOk:
+            print(f"\n\t\t -- product-queue is correct.") 
     
-    return status
+    return statusOk
 
 
 # Resets the LDM registry.
@@ -1203,7 +1225,7 @@ def scour(reg):
 def pageLog(reg):
 
     status      = 1
-    pager_cmd   = os.getenv['PAGER']
+    pager_cmd   = os.environ.get('PAGER', None)
     logFile     = reg['log_file']
 
     if pager_cmd == None:
@@ -1275,7 +1297,8 @@ if __name__ == "__main__":
 
     os.system('clear')
 
-    regHandler = RegistryParser()
+    ldmhome = "/home/miles/projects/ldm"
+    regHandler = RegistryParser(ldmhome)
     envHandler = LDMenvironmentHandler()
 
     registryDict = regHandler.getRegistryEntries()

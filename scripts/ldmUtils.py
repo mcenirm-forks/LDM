@@ -256,8 +256,10 @@ def _executePqMon(pq_path):
         return failure, ""
 
 
+
 def _doesFileExist(path):
     return os.path.exists(path)
+
 
 def _getLdmdPid(pidFilename):
     
@@ -291,80 +293,8 @@ def _getLdmdPid(pidFilename):
     return status
 
 
-###############################################################################
-# Check a queue-file for errors
-###############################################################################
-
-
 def errmsg(msg):
     print(f"\n\tERROR: {msg}")
-
-def isProductQueueOk():
-
-    path = "/home/miles/projects/ldm/var/queues/ldm.pq"
-    status = getQueueStatus(path, "product")
-
-    if 4 == status:
-        errmsg("The product-queue is corrupt.  Use\n\
-            ldmadmin delqueue && ldmadmin mkqueue\n\
-            to remove and recreate it.")
-    
-    return status == 0
-
-
-
-def isSurfQueueOk():
-
-    path = "/home/miles/projects/ldm/var/queues/pq_surf.pq"
-    status = getQueueStatus(path, "surf")
-
-    if 4 == status:
-        errmsg(f"The surf-queue is corrupt.  Use\n \
-        ldmadmin delsurfqueue -q {path} && ldmadmin mksurfqueue -q {path}\n \
-        to remove and recreate it.")
-    
-    return status == 0
-
-
-# Consolidated behavior (fewer cases)
-def getQueueStatus(queue_path, name):
-    
-    status = 0
-
-    print(f"Checking the {name}-queue...\n")
-    pqcheck_cmd = f"pqcheck -q {queue_path} 2>/dev/null"
-    
-    status = os.system(pqcheck_cmd) >> 8
-    
-    if 1 == status:
-        errmsg(f"The self-consistency of the {name}-queue couldn't be determined.  \n\
-            See the logfile for details.")
-        return status
-    
-    if 2 == status:
-        errmsg(f"The {name}-queue doesn't have a writer-counter.  \n\
-            Using 'pqcheck -F' to create one...")
-        return status
-
-    
-    pqcheck_cmd = f"pqcheck -F -q {queue_path} "
-    status = os.system(pqcheck_cmd) >> 8    # to get the system status code
-    
-    if status != 0:    
-        errmsg("Couldn't add writer-counter to {name}-queue.");
-        return status
-   
-    if 3 == status:
-        pqcat_pqcheck_cmd = f"pqcat -l- -s -q {queue_path} && pqcheck -F -q {queue_path}"
-        errmsg(f"The writer-counter of the {name}-queue isn't zero.  Either \
-            a process has the product-queue open for writing or the queue \
-            might be corrupt.  \n\
-            Terminate the process and recheck or use:\n\
-            {pqcat_pqcheck_cmd} \
-            to validate the queue and set the writer-counter to zero.")
-    
-
-    return status
 
 
 ###############################################################################
@@ -400,6 +330,10 @@ def getTime():
 
     if mon in [1, 2, 3, 4, 5, 6, 7, 8, 9]:
         mon = f"0{mon}"
+
+    if mday in [1, 2, 3, 4, 5, 6, 7, 8, 9]:
+        mday = f"0{mday}"        
+
     hh_mm_ss = _formatToHhMmSs(hour,minute,sec, "")
     dateTime = f"{year}{mon}{mday}.{hh_mm_ss}"
 
@@ -414,7 +348,7 @@ def getLoad():
     
     loadAvg1        = float( all3LoadAvgs[0][:-1])
     loadAvg2        = float(all3LoadAvgs[1][:-1])
-    loadAvg3        = float(all3LoadAvgs[2][:-1])
+    loadAvg3        = float(all3LoadAvgs[2])
     
     return (loadAvg1, loadAvg2, loadAvg3)
 
@@ -525,13 +459,13 @@ def readTop(top_cmd):
         mem_line    = items_lines[0].split()
         swap_line   = items_lines[1].split()
         
-        mem_total   = int(mem_line[3])
-        mem_free    = int(mem_line[5])
-        mem_used    = int(mem_line[7])
+        mem_total   = int(mem_line[3]) * 1024
+        mem_free    = int(mem_line[5]) * 1024
+        mem_used    = int(mem_line[7]) * 1024
 
-        swap_total  = int(swap_line[2])
-        swap_free   = int(swap_line[4])
-        swap_used   = int(swap_line[6])
+        swap_total  = int(swap_line[2]) * 1024
+        swap_free   = int(swap_line[4]) * 1024
+        swap_used   = int(swap_line[6]) * 1024
 
         #print(mem_used, mem_free, swap_used, swap_free, 1, 1)
         return (mem_used, mem_free, swap_used, swap_free, 1, 1)
@@ -539,7 +473,7 @@ def readTop(top_cmd):
 
     except Exception as e:
         #print(e)
-        return (0,0,0,0,0,0)  # last 2 zeros to tell readFree() to execute
+        return (0,0,0,0,0,0)  # last 2 zeros to force readFree() to execute
 
 
 def readFree():
@@ -552,13 +486,13 @@ def readFree():
         mem_line    = items_lines[1].split()
         swap_line   = items_lines[2].split()
         
-        mem_total   = int(mem_line[1])
-        mem_used    = int(mem_line[2])
-        mem_free    = int(mem_line[3])
+        mem_total   = int(mem_line[1]) * 1024
+        mem_used    = int(mem_line[2]) * 1024
+        mem_free    = int(mem_line[3]) * 1024
 
-        swap_total  = int(swap_line[1])
-        swap_used   = int(swap_line[2])
-        swap_free   = int(swap_line[3])
+        swap_total  = int(swap_line[1]) * 1024
+        swap_used   = int(swap_line[2]) * 1024
+        swap_free   = int(swap_line[3]) * 1024
 
         #print(mem_used, mem_free, swap_used, swap_free)
         return (mem_used, mem_free, swap_used, swap_free)
@@ -571,6 +505,7 @@ def readFree():
 
 # Retrieve CPU times
 def readVmstat():
+
     csIndex = -1
     usIndex = -1
     syIndex = -1
@@ -578,31 +513,37 @@ def readVmstat():
     waIndex = -1
     line = ""
 
-    vmstat_cmd = f"vmstat 1 1"
+    vmstat_cmd = f"vmstat 1 2"
     try:
         vmstat_output   = subprocess.check_output(vmstat_cmd, shell=True).decode()
         items_lines     = vmstat_output.split("\n")
 
         base_line       = items_lines[1].split()
-        value_line      = items_lines[2].split()
+        value_line1     = items_lines[2].split()
+        value_line2     = items_lines[3].split()
+        
 
+        print(base_line)
+        print(value_line1)
+        print(value_line2)
+        
         pos = -1
         for term in base_line:
             pos += 1
             if term == "cs":
-                contextSwitches = int(value_line[pos])
+                contextSwitches = int(value_line2[pos])
 
             if term == "us":
-                userTime        = int(value_line[pos])
+                userTime        = int(value_line2[pos])
 
             if term == "sy":
-                sysTime         = int(value_line[pos])
+                sysTime         = int(value_line2[pos])
 
             if term == "id":
-                idleTime        = int(value_line[pos])
+                idleTime        = int(value_line2[pos])
 
             if term == "wa":
-                waitTime        = int(value_line[pos])
+                waitTime        = int(value_line2[pos])
 
         return (contextSwitches, sysTime, userTime, idleTime, waitTime)
 
@@ -610,10 +551,15 @@ def readVmstat():
         print(e)
         return (contextSwitches, sysTime, userTime, idleTime, waitTime) # all zeros
 
+def _listToString(all_metrics):
+    str1 = ""
+    for elem in all_metrics:
+        str1 += f"{elem} "
 
+    return str1
 #
 # print metrics to file
-def printMetrics(reg):
+def printMetrics(reg, flag):
 
     metricsFilePath = reg['metrics_file']
     port            = reg["port"]
@@ -621,11 +567,12 @@ def printMetrics(reg):
     pq_line         = list(getPq(pq_path))
     portCount       = list(getPortCount(reg, port))
     load            = list(getLoad())
-    thisTime        = float(getTime())    
+    thisTime        = float(getTime())
     cpu             = list(getCpu(reg))
     
     all_metrics     =  load + portCount + pq_line + cpu 
     all_metrics.insert(0, thisTime)
+    all_metrics = _listToString(all_metrics)
     
     time_legend     = "\ttime: \t\tYYYYmmdd.hhmmss"
     load_legend     = "\tuptime (avg at): 1 mn, 5 mn, 15 mn"
@@ -637,9 +584,10 @@ def printMetrics(reg):
 
     # print to file
     with open(metricsFilePath, "w+") as metricsFile:
-        print(all_legend,   file=metricsFile) 
-        print(all_metrics,  file=metricsFile)
+        
 
+        print(all_legend) 
+        print(all_metrics)
         # print the legend to the metricsFilePath
         # print(f"\nLegend:\n{time_legend}\n{load_legend}\n{port_legend}\n{pq_legend}\n{cpu_legend}\n", file=metricsFile)
 
@@ -647,36 +595,8 @@ def printMetrics(reg):
 
 def addMetrics(reg):
 
-    status          = 0
-    metricsFilename = reg['metrics_file']
-
-    if not _doesFileExist(metricsFilename):
-        errmsg("addMetrics(): Cannot create/open metrics-file '{metricsFilename}'\n")
-        status  = 1
-        return status
-
-    fileToLock  = f"{metricsFilename}.lock"
-    lock        = FileLock(fileToLock)
-
-    try:
-        lock.acquire(timeout=20)
-        
-        # print metrics to file
-        printMetrics(reg, metricsFilename)
-
-    except:
-        print(f"\nLock already acquired: lockID: {lock}\n")
-        errmsg(f"addmetrics(): Couldn't lock metrics-file '{metricsFilename}'. \
-                \nAnother 'ldmadmin addmetrics' is likely running.")
-        status  = 2
-        return status
-
-    try:
-        lock.release()
-    except Timeout:
-        print(f"releaseLock(): Could not release lock on '{fileToLock}'! \
-            \n(Manually delete it.)")
-        status  = 3
+    # print metrics to file named in registry
+    status = printMetrics(reg, True)
         
     return status
 
@@ -814,7 +734,8 @@ def copyCliArgsToEnvVariable(envVar, cliDico):
             'b': 'begin',
             'e': 'end',
             "pqact_conf_option": "pqact_conf_option",
-            "p": "pqact_conf"
+            "p": "pqact_conf", 
+            "P": "port"
 
     }
     # set the defaults:
@@ -839,6 +760,16 @@ def copyCliArgsToEnvVariable(envVar, cliDico):
 
         mappedAttribute = mapArgsToNames[key]
         envVar[mappedAttribute] = val
+
+def checkWhoIAm():
+
+    whoami_cmd = "whoami"
+    users = subprocess.check_output(whoami_cmd, shell=True ).decode().split("\n")
+    
+    if users[0] == 'root':
+        print("\n\tWARNING: It is not recommended to run ldmadmin(1) as 'root'...\n")
+    #else:
+    #    print(f"Running ldmadmin as {users[0]} - Ok")
 
 
 def checkDiskSpace(pq_path, pqSize):
@@ -878,6 +809,8 @@ def checkDiskSpace(pq_path, pqSize):
     # 1K block
     return rootAvailSize * 1024 > pq_size + residualMem
 
+
+
 def kill_ldmd_proc(env):
     
     status = 0
@@ -903,7 +836,7 @@ def kill_ldmd_proc(env):
 
     # Remove the pid file
     pidFile = env['pid_file']
-    if util._doesFileExist(pidFile): 
+    if _doesFileExist(pidFile): 
         try:
             os.unlink(pidFile) 
         except: 
@@ -937,16 +870,17 @@ def isLdmdProcRunning(env):
     return ldmd_procs_found > 0 and _doesFileExist(pidFilename)
 
 
-
 if __name__ == "__main__":
 
     os.system('clear')
 
-    regHandler = RegistryParser()
+
+    ldmhome = "/home/miles/projects/ldm"
+    regHandler = RegistryParser(ldmhome)
 
 
     # configure.ac replaces "@variable@"with actual value:
-    ldmHome     = environ.get("LDMHOME", "/home/miles/dev")
+    ldmHome     = os.environ.get("LDMHOME", "/home/miles/dev")
     ldm_port    = "1.0.0.0"
     ldm_version = "6.13.14"
 
@@ -963,7 +897,11 @@ if __name__ == "__main__":
     regHandler.prettyPrintRegistry()
 
     kill_ldmd_proc(envVarDict)
-    print(ldmd_procs_stopped(envVarDict))
+    print("ldmd processes are running? --> ", end="")
+    print(isLdmdProcRunning(envVarDict))
+
+
+    checkWhoIAm()
 
     exit(0)
 
@@ -1010,10 +948,8 @@ if __name__ == "__main__":
     metrics_file= "toto.txt"
     eval("plotMetrics(begin, end, metrics_file, envVarDict)")
 
-    pq_size = registryDict['pq_size']
-
-    pq_path= registryDict['pq_path']
-
+    pq_size     = registryDict['pq_size']
+    pq_path     = registryDict['pq_path']
     if checkDiskSpace(pq_path, pq_size): 
         print(f"Enough space to create a queue in fast mode? Yes!")
     else:

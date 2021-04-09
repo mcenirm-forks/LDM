@@ -32,9 +32,10 @@ import argparse
 class CLIParser:
 
     ldmCommandsDict={
-    	"start": ["[-v] [-x] [-m maxLatency] [-o offset] [-q q_path] [-M max_clients] [conf_file]",	"Starts the LDM"],
+    	"start":                ["[-v] [-x] [-M max_clients] [-m maxLatency] [-o offset] [-P port] [-q q_path] [conf_file]",	
+                                                                    "Starts the LDM"],
     	"stop":					["",								"Stops the LDM"],
-        "restart":				["[-v] [-x] [-m maxLatency] [-o offset] [-q q_path] [-M max_clients] [conf_file]",	
+        "restart":				["[-v] [-x] [-M max_clients] [-m maxLatency] [-o offset] [-P port] [-q q_path] [conf_file]",	
                                                                     "Restarts a running LDM"],
         "mkqueue":				["[-v] [-x] [-c] [-f] [-q q_path]",	"Creates a product-queue"],
         "delqueue":				["[-q q_path]",						"Deletes a product-queue"],
@@ -65,12 +66,11 @@ class CLIParser:
     }
     lockRequiringCmds = [   "start", "restart", "stop", 
                             "mkqueue", "delqueue", "mksurfqueue", 
-                            "delsurfqueue", "vetqueuesize", "check"
+                            "delsurfqueue", "vetqueuesize", "check", "addmetrics"
                         ]
 
     def __init__(self, ldmhome):
 
-        # commands and their options
         
         self.ldmShortCmdsList       = []
         self.ldmhome                = ldmhome
@@ -126,7 +126,7 @@ class CLIParser:
             self.cliParser.add_argument('-v',               action='store_true', help='verbose', required=False)
             self.cliParser.add_argument('-x',               action='store_true', help='debug', required=False)
             self.cliParser.add_argument('-m maxLatency',    action="store", dest='m', type=int,  help='Maximum latency', metavar='', required=False)
-            self.cliParser.add_argument('-o offset',        action="store", dest='o', type=int,  help='', metavar='', required=False)
+            self.cliParser.add_argument('-o offset',        action="store", dest='o', type=int,  help='', metavar='', required=False)            
             self.cliParser.add_argument('-q q_path',        action="store", dest='q', type=str,  default=f'{self.ldmhome}/var/queues/ldm.pq', help='', metavar='', required=False)
             self.cliParser.add_argument('-M max_clients',   action="store", dest='M', type=int,  help='', metavar='', required=False)
             self.cliParser.add_argument('conf_file',        nargs='?', type=None, default=f'{self.ldmhome}/etc/ldmd.conf', help='', metavar='')
@@ -164,7 +164,7 @@ class CLIParser:
         if cmd == "watch":
             self.cliParser.add_argument('-f feedset', action="store", dest='f', default='ANY',  help='feedset', metavar='', required=False)
 
-        if cmd == "newlog":                                                        # begin: YYYYMMDD[.hh[mm[ss]]]
+        if cmd == "plotmetrics":                                                        # begin: YYYYMMDD[.hh[mm[ss]]]
             self.cliParser.add_argument('-b begin', action="store", dest='b', default=19700101, type=float, help='', metavar='', required=False)
             self.cliParser.add_argument('-e end',   action="store", dest='e', default=30000101, type=float, help='', metavar='', required=False)
         
@@ -243,10 +243,10 @@ class CLIParser:
     Usage: ldmadmin command [arg ...]
 
 commands:
-    start [-v] [-x] [-m maxLatency] [-o offset] [-q q_path] [-M max_clients]
+    start [-v] [-x] [-m maxLatency] [-o offset] [-q q_path] [-M max_clients] [-P port]
         [conf_file]                          Starts the LDM
     stop                                     Stops the LDM
-    restart [-v] [-x] [-m maxLatency] [-o offset] [-q q_path] [-M max_clients]
+    restart [-v] [-x] [-m maxLatency] [-o offset] [-q q_path] [-M max_clients] [-P port]
         [conf_file]                          Restarts a running LDM
     mkqueue [-v] [-x] [-c] [-f] [-q q_path]  Creates a product-queue
     delqueue [-q q_path]                     Deletes a product-queue
@@ -291,6 +291,8 @@ options:
     -M max_clients  Maximum number of active clients
     -n numlogs      Number of logs to rotate. Default: 7
     -o offset       Unconditional data-request temporal-offset
+    -P port         The  port  to  use  rather  than  the default port of 
+                    $(regutil /server/port).  The registered, well-known LDM port is 388.
     -q q_path       Specify a product-queue path. LDM Default: $LDMHOME/ldm/var/queues/ldm.pq,
                     pqsurf(1) default: $LDMHOME/ldm/var/queues/pqsurf.pq
     -v              Turn on verbose mode
@@ -308,7 +310,9 @@ conf_file:
 if __name__ == "__main__":
 
 
-    cliInst         = CLIParser()              # instance of CLIParser
+    ldmhome = "/home/miles/projects/ldm"
+
+    cliInst         = CLIParser(ldmhome) 
     cmdsDico        = cliInst.getFullCommandsDict()
     
     print(cmdsDico)
