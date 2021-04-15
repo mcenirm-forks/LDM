@@ -154,8 +154,8 @@ class CLIParser:
             self.cliParser.add_argument('-q q_path', action="store", dest='q', type=str, default=f'{self.ldmhome}/var/queues/pqsurf.pq', help='', metavar='', required=False)
 
         if cmd == "newlog":
-            self.cliParser.add_argument('-n numlogs', action="store", dest='n', default=7, type=int,    help='', metavar='', required=False)
-            self.cliParser.add_argument('-l logfile', action="store", dest='l', type=str, default=f'{self.ldmhome}/var/logs/ldmd.log', help='', metavar='', required=False)     
+            self.cliParser.add_argument('-n numlogs', action="store", dest='n', type=int,    help='', metavar='', required=False)
+            self.cliParser.add_argument('-l logfile', action="store", dest='l', type=str, help='', metavar='', required=False)     
 
         if cmd == "pqactcheck":
             self.cliParser.add_argument('-p pqact_conf', action="store", dest='p', type=str,  default=f'{self.ldmhome}/etc/pqact.conf', help='', metavar='', required=False)

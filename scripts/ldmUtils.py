@@ -91,13 +91,13 @@ def _increaseQueue(reg, envVar, pqMonValues):
     
     # success so far
     # LDM is stopped
-    print("Grow  the queue...\n")
+    print("vetQueueSize(): Grow  the queue...\n")
     if sub.grow(pq_path, newQueuePath): 
         status = 2        # major failure
         return status
     
-    print("Saving new queue parameters...\n")
-    if sub.saveQueuePar(newByteCount, newSlotCount):
+    print("vetQueueSize(): Save new queue parameters: (size, slots)\n")
+    if sub.saveQueuePar(reg, envVar, newByteCount, newSlotCount):
         status = 2    # major failure
         return status
         
@@ -105,7 +105,7 @@ def _increaseQueue(reg, envVar, pqMonValues):
     # success so far
     # restart needed
     if restartNeeded: 
-        print("Restarting the LDM...\n")
+        print("vetQueueSize(): Restarting the LDM...\n")
         if sub.start_ldm(reg, envVar):
             errmsg("vetQueueSize(): Couldn't restart the LDM")
             status = 2    # major failure
@@ -118,7 +118,7 @@ def _increaseQueue(reg, envVar, pqMonValues):
 
 
 
-def _decreaseQueue(reg, envVar):
+def _decreaseMaxLatency(reg, envVar):
     
     #2. recon == decrease  
     
@@ -139,7 +139,7 @@ def _decreaseQueue(reg, envVar):
 
 
     print("Saving new time parameters...\n")
-    if sub.saveTimePar(newTimeOffset, newMaxLatency):
+    if sub.saveTimePar(reg, envVar, newTimeOffset, newMaxLatency):
         status = 2    # major failure
         return status
     
@@ -166,28 +166,6 @@ def _decreaseQueue(reg, envVar):
 
     # reset queue metrics
     status = os.system("pqutil -C")     # <-- not tested
-    return status
-
-
-def _doNothing(pqMonValues):
-
-    ageOldest       = pqMonValues[1] 
-    minVirtResTime  = pqMonValues[2] 
-    mvrtSize        = pqMonValues[3] 
-    mvrtSlots       = pqMonValues[4] 
-    maxLatency      = pqMonValues[5] 
-
-    newByteCount, newSlotCount = computeNewQueueSize(maxLatency, minVirtResTime, ageOldest, mvrtSize, mvrtSlots)
-    
-    error_msg = f"vetQueueSize(): The queue should be {newByteCount} \
-        bytes in size with {newSlotCount} slots or the \
-        maximum-latency parameter should be decreased to \
-        {minVirtResTime} seconds. You should set \
-        registry-parameter 'regpath" + "{RECONCILIATION_MODE}" + " \
-        to 'increase queue' or 'decrease max latency' or \
-        manually adjust the relevant registry parameters and recreate the queue."
-    errmsg(error_msg)
-    status = 1        # small queue or big max-latency
     return status
 
 
@@ -519,13 +497,7 @@ def readVmstat():
         items_lines     = vmstat_output.split("\n")
 
         base_line       = items_lines[1].split()
-        value_line1     = items_lines[2].split()
         value_line2     = items_lines[3].split()
-        
-
-        print(base_line)
-        print(value_line1)
-        print(value_line2)
         
         pos = -1
         for term in base_line:
@@ -551,76 +523,14 @@ def readVmstat():
         print(e)
         return (contextSwitches, sysTime, userTime, idleTime, waitTime) # all zeros
 
+
+
 def _listToString(all_metrics):
     str1 = ""
     for elem in all_metrics:
         str1 += f"{elem} "
 
     return str1
-#
-# print metrics to file
-def printMetrics(reg, flag):
-
-    metricsFilePath = reg['metrics_file']
-    port            = reg["port"]
-    pq_path         = reg["pq_path"]
-    pq_line         = list(getPq(pq_path))
-    portCount       = list(getPortCount(reg, port))
-    load            = list(getLoad())
-    thisTime        = float(getTime())
-    cpu             = list(getCpu(reg))
-    
-    all_metrics     =  load + portCount + pq_line + cpu 
-    all_metrics.insert(0, thisTime)
-    all_metrics = _listToString(all_metrics)
-    
-    time_legend     = "\ttime: \t\tYYYYmmdd.hhmmss"
-    load_legend     = "\tuptime (avg at): 1 mn, 5 mn, 15 mn"
-    port_legend     = "\tport (count): \tremote, local"
-    pq_legend       = "\tpq: \t\tage, prodCount, byteCount"
-    cpu_legend      = "\tCPU: \t\tuserTime, sysTime, idleTime, waitTime, memUsed, memFree, swapUsed, swapFree, contextSwitches"
-
-    all_legend      = "\n   time  \t|     uptime     | port |            pq          |   CPU "
-
-    # print to file
-    with open(metricsFilePath, "w+") as metricsFile:
-        
-
-        print(all_legend) 
-        print(all_metrics)
-        # print the legend to the metricsFilePath
-        # print(f"\nLegend:\n{time_legend}\n{load_legend}\n{port_legend}\n{pq_legend}\n{cpu_legend}\n", file=metricsFile)
-
-
-
-def addMetrics(reg):
-
-    # print metrics to file named in registry
-    status = printMetrics(reg, True)
-        
-    return status
-
-
-#
-# Command for plotting metrics: TO TEST!!!!!!!!!!!!!!!!!!!!!!!!!
-def plotMetrics(reg, envVar):
-
-    begin           = envVar['begin']
-    end             = envVar['end']
-    metrics_files   = reg['metrics_files']
-    
-    plot_cmd = f"plotMetrics -b {begin} -e {end} {metrics_files}"
-    
-    return os.system(plot_cmd)
-
-
-def newMetrics(reg):
-
-    metricsFile     = reg['metrics_file']
-    numMetrics      = reg['nums_metrics']
-
-    return ldmSubs.newLog(metricsFile, numMetrics)
-
 
 
 def readPqActConfFromLdmConf(ldmdConfPathname):
@@ -667,54 +577,6 @@ def _whichPs(envVar):
         
     return cmd, default
 
-# ###############################################################################
-# # HUP the pqact program(s)
-# ###############################################################################
-
-def pqactHUP(envVar):
-
-    status = 0
-    cmd=""
-    ps_cmd, default = _whichPs(envVar)
-
-    ps_output   = subprocess.check_output(ps_cmd, shell=True).decode()
-
-    ps_lineList = ps_output.split('\n')
-
-    pid_index = default
-    pqact_pid = -1
-    pqact_pids = ""
-
-    # search for the position (pid_index) of PID
-    for ps_line in ps_lineList:
-        if 'PPID' in ps_line:
-            ps_line_items = ps_line.split()
-            try:
-                pid_index = ps_line_items.index("PID") 
-                
-            except:
-                errmsg(f"PID position not found in ps output: {ps_line}. Weird!")
-    
-        else:
-            if 'pqact' in ps_line:
-                pqact_line_item = ps_line.split()
-                try:
-                    pqact_pid = pqact_line_item[pid_index] 
-                    pqact_pids += f" {pqact_pid}"
-                    
-                except:
-                    errmsg(f"pqact position not found in ps output: {ps_line}. Weird!")
-                
-    if pqact_pids == "":
-        errmsg("ldmadmin_pqactHUP: process not found, cannot HUP pqact\n")
-        return status
-    
-    print("Check pqact HUP with command \"ldmadmin tail\"\n")
-    kill_cmd = f"kill -HUP {pqact_pids}"
-    
-    status = os.system( kill_cmd )
-
-    return status
 
 
 def copyCliArgsToEnvVariable(envVar, cliDico):
@@ -722,7 +584,7 @@ def copyCliArgsToEnvVariable(envVar, cliDico):
     mapArgsToNames = {
             'm': 'max_latency', 
             'M': 'max_clients',
-            'q': 'pq_path',
+            'q': 'q_path',
             'o': 'server_time_offset',
             'conf_file': 'ldmd_conf', 
             'v': 'verbose',
@@ -740,8 +602,7 @@ def copyCliArgsToEnvVariable(envVar, cliDico):
     }
     # set the defaults:
     envVar['feedset']           = "ANY"
-    envVar['pq_path']           = ""
-    envVar['sq_path']           = ""
+    envVar['q_path']           = ""
     envVar['ldmd_conf']         = ""
     envVar['log_file']          = ""
     envVar['pqact_conf']        = ""
@@ -767,7 +628,8 @@ def checkWhoIAm():
     users = subprocess.check_output(whoami_cmd, shell=True ).decode().split("\n")
     
     if users[0] == 'root':
-        print("\n\tWARNING: It is not recommended to run ldmadmin(1) as 'root'...\n")
+        exitMessage("FATAL: ldmadmin(1) is being run as 'root'...! Exiting.\n")
+
     #else:
     #    print(f"Running ldmadmin as {users[0]} - Ok")
 

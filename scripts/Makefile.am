@@ -26,6 +26,13 @@ nodist_bin_SCRIPTS	= \
     netcheck \
     plotMetrics \
     syscheck
+libexec_SCRIPTS = \
+    environHandler.py \
+    ldmadmin.py \
+    ldmSubs.py  \
+    ldmUtils.py  \
+    parseCLI.py  \
+    parseRegistry.py
 nodist_man1_MANS	= ldmadmin.1
 dist_man1_MANS	        = netcheck.1 syscheck.1 ldmfail.1 wasReceived.1
 CLEANFILES              = ldmadmin ldmadmin.1

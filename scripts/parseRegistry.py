@@ -29,6 +29,9 @@ from xml.dom.minidom import parse
 import xml.dom.minidom
 import re
 
+from xml.etree.ElementTree import ElementTree, dump
+
+
 # Singleton Pattern
 
 class RegistryParser(object):
@@ -64,7 +67,6 @@ class RegistryParser(object):
         "pq_path":                      {"path":                        0},
         "pq_size":                      {"size":                        0},
         "pq_slots":                     {"slots":                       0},
-        "pq_avg_size":                  {"avg-size":                    0},
         # surf
         "surf_path":                    {"path":                        1},
         "surf_size":                    {"size":                        1},  #<size>2M</size>   5G, 3K : to convert
@@ -86,16 +88,18 @@ class RegistryParser(object):
 
 
     def __new__(self, ldmhome):
+
         if self._instance is None:
             #print('Creating ParseRegistry singleton:')
             self._instance = super(RegistryParser, self).__new__(self)
             # Put any initialization here.
 
-            registry_xml = f"{ldmhome}/etc/registry.xml"
-            self.DOMTree = xml.dom.minidom.parse("registry.xml") 
+            self.registry_xml = f"{ldmhome}/etc/registry.xml"
+            self.registry_xml = "registry.xml"           # <<<<--- remove in production
+            self.DOMTree = xml.dom.minidom.parse(self.registry_xml)   
             #print(self.registryEntries)  
             
-            missingXmlElements=list()
+            missingXmlElements = list()
 
             for entry, val in self.registryEntries.items():
                 #print(f"ParseRegistry: {entry}, {val}")
@@ -106,23 +110,11 @@ class RegistryParser(object):
                     tagName = self.DOMTree.getElementsByTagName(xmlElem)[rank].firstChild.data
                     #print(f"\t --> {entry}: {tagName}  ")
                 except Exception as e:
-
-                    print(f"\n\t{e}")
-                    print(f"\tPlease check XML element: {xmlElem} ")
-                    missingXmlElements.append(xmlElem)
-                    continue
+                        print(f"\tPlease check XML element: {xmlElem} ")
+                        missingXmlElements.append(xmlElem)
+                        continue
 
                 self.registryEntries[entry]= tagName
-
-                # special handling
-                # 1,
-                if entry == "pq_size" or entry == "surf_size" or entry == "pq_avg_size":
-                    expandedSize = self.convertSize(self, self.registryEntries[entry])
-                    if expandedSize == -1:
-                        print(f"Please check the registry. Size of {entry} is incorrect.")
-                        exit(0)
-
-                    self.registryEntries[entry] = expandedSize
 
                 # 2. Validate the ip_addr. Set default to 0.0.0.0
                 regex = "^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$"
@@ -142,22 +134,20 @@ class RegistryParser(object):
                 print("\tPlease fix the relevant attributes and retry. Exiting!...\n")
                 exit(0)
 
-            # 4. Update pq_slots value if default
-            reg = self.registryEntries
-            pq_size     = reg['pq_size']  
-            pq_slots    = reg['pq_slots']         
-            pq_avg_size = reg['pq_avg_size']      
+            
+            self.computeProductQueueElementsDefault(self)
 
-            if pq_slots == "default":
-                if pq_avg_size > 0:
-                    pq_slots = int(pq_size / pq_avg_size)
-                else:
-                    pq_slots= int(pq_size / 57344)      # divide by 56K
+            # Convert surfqueue size 
+            pqsurfSize      = self.registryEntries["surf_size"]
+            expandedSize    = self.convertSize(self, pqsurfSize)
+            if expandedSize == -1:
+                print(f"\tPlease check the registry. Format of 'surfqueue_size' is incorrect.\n")
+                exit(0)
 
-                self.registryEntries['pq_slots'] = pq_slots
-            # else: keep current 'pq_slots' numeric value
+            self.registryEntries["surf_size"] = expandedSize
 
-            # 5. Convert all numeral strings to numbers:
+
+            # 5. Convert all other numeral strings to numbers:
             self.stringToInt(self)
 
             # 6.
@@ -202,28 +192,86 @@ class RegistryParser(object):
 
         
     # More validation may be required
-    def convertSize(self, pq_size):
+    def convertSize(self, q_size):
 
-        str_len = len( pq_size )
+        str_len = len( q_size )
         units = {"K": 10**3, "M": 10**6, "G": 10**9, "T": 10**12}
 
-        if not pq_size[-1] in units.keys(): ## assume a number with no unit
+        if not q_size[-1] in units.keys(): ## assume a number with no unit
             # check the number
             try:
-                return int(float(pq_size))    
+                return int(float(q_size))    
             except:
-                print(f"Error in converting pq_size: {pq_size}")
+                print(f"\n\n\tError in converting pq_size: {q_size}")
                 return -1
                 
         # a unit exists
-        unit = pq_size[-1]
-        number = pq_size[str_len - 2]
+        unit    = q_size[-1]
+        number  = q_size[:-1]
+
         # check the number
         try:
             return int(float(number)*units[unit])    
         except:
-            print(f"Error in converting pq_size: {pq_size}")
+            print(f"Error in converting q_size: {q_size}")
             return -1
+
+
+
+    def computeProductQueueElementsDefault(self):
+            
+        reg         = self.registryEntries
+        pq_size     = reg['pq_size']  
+        pq_slots    = reg['pq_slots']             
+
+        #
+        # 1. NO more than one element can be set as "default"
+        #
+        if pq_size == "default" and pq_slots == "default":
+            print(f"\n\tPlease check the queue XML elements: (slots, size). Not ALL elements can be 'default'. \n")
+            exit(0)
+
+        if pq_size == "default":
+            pq_size = "2G"      # an arbitrary default
+        pq_size = self.convertSize(self, pq_size)
+        if pq_size == -1:
+            print(f"\tPlease check the registry. Format of {pq_size} is incorrect.\n")
+            exit(0)
+
+        self.registryEntries['pq_size'] = pq_size
+
+        if pq_slots == "default":
+            pq_slots = "35714"
+
+        pq_slots = self.convertSize(self, pq_slots)
+        if pq_slots == -1:
+            print(f"\tPlease check the registry. Format of {pq_slots} is incorrect.\n")
+            exit(0)
+
+        self.registryEntries['pq_slots'] = pq_slots
+
+
+    #def modifyRegistry(self, registryDom, newSize, newSlots):
+    def modifyRegistry(self, registryDom, element, newValue):
+              
+        try:
+            tagName    = registryDom.getElementsByTagName(element)[0]
+            self.replaceText(tagName, newValue)
+
+            with open(self.registry_xml, "w") as registryHandle:
+                print(registryDom.toxml(), file=registryHandle)
+
+        except Exception as e:
+            print(e)
+            errmsg(f"Could not replace size and slots values into registry: {self.registry_xml}")
+
+
+    # Replace an XLM element's value. Called from modifyRegstry()
+    def replaceText(self, node, newText):
+        if node.firstChild.nodeType != node.TEXT_NODE:
+            raise Exception("Node does not contain text")
+
+        node.firstChild.replaceWholeText(newText)
 
 
     def getRegistryEntries(self):
@@ -240,5 +288,18 @@ class RegistryParser(object):
 if __name__ == "__main__":
 
     ldmhome = "/home/miles/projects/ldm"
+
     c = RegistryParser(ldmhome)
     c.prettyPrintRegistry()
+    
+    newMaxLatency = 3600
+    c.modifyRegistry(c.DOMTree,  "max-latency", newMaxLatency)
+
+    newTimeOffset = 3600
+    c.modifyRegistry(c.DOMTree,  "time-offset", newTimeOffset)
+
+    newSize = "2G"
+    c.modifyRegistry(c.DOMTree, "size", newSize)
+
+    newSlots = 34000
+    c.modifyRegistry(c.DOMTree, "slots", newSlots)

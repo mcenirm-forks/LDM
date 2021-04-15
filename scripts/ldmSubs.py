@@ -47,7 +47,6 @@ def ldmConfig(reg, env):
     print(f"\tscour(1) conf file:    { reg['scour_file'] }")
     print(f"\tproduct queue:         { reg['pq_path'] }")
     print(f"\tqueue size:            { reg['pq_size'] } bytes")
-    print(f"\tqueue average size:    { reg['pq_avg_size'] } bytes")
     print(f"\tqueue slots:           { reg['pq_slots'] }")
     print(f"\treconciliation mode:   { reg['reconMode'] }")
     print(f"\tpqsurf(1) path:        { reg['surf_path'] }")
@@ -129,63 +128,83 @@ def grow(pq_path, newQueuePath):
 
     return status
 
-
-def errmsg(msg):
-    print(f"\n\tERROR: {msg}")
-
-def  warnmsg(msg):
-    print(f"\n\tWARNING: {msg}")
-
-
-def saveQueuePar(pq_size, size, slots):
+# Save new size and slots values to registry
+def saveQueuePar(reg, env, size, slots):
     status = 1                     # failure default
 
-    regutil_cmd = f"regutil -u {size} regpath" + "{QUEUE_SIZE}"
-    if os.system(regutil_cmd):
-        errmsg("saveQueuePar(): Couldn't save new queue size")
+    ldmhome     = env["ldmhome"]
+    regHandler  = RegistryParser(ldmhome)
+    
+    pq_size     = reg["pq_size"]
+    pq_slots    = reg["pq_slots"]
+    
+    # "size":
+    try:
+        regHandler.modifyRegistry(regHandler.DOMTree, "size", newSize)
+    except Exception as e:
+        print(f"SaveQueueParam(2) failed. Could not save 'size' (={newSize}) to registry.xml")
         return status
 
-    regutil_cmd = f"regutil -u {slots} regpath" + "{QUEUE_SLOTS}"
-    if os.system(regutil_cmd):
-        errmsg("saveQueuePar(): Couldn't save queue slots")
+    # "slots":
+    try:
+        regHandler.modifyRegistry(regHandler.DOMTree, "slots", newSlots)
+    except Exception as e:
+        # Try revert 'size' value to pq_size
+        try:
+            regHandler.modifyRegistry(regHandler.DOMTree, "size", pq_size)
+            print("\nSaveQueueParam(1) failed. Restored previous queue size element\n")
+        except Exception as ee:
+            print("\nSaveQueueParam(1) failed. Could not restore previous queue size elements\n")
+            return status
 
-        print("Restoring previous queue size\n")
-        regutil_cmd = f"regutil -u {pq_size} regpath" + "{QUEUE_SIZE}"
-        if os.system(regutil_cmd):
-            errmsg("saveQueuePar(): Couldn't restore previous queue size")
+        print(f"SaveQueueParam(2) failed. Could not save 'slots' (={newSlots}) to registry.xml. Nor restore previous 'size'. ")
+        return status
 
-    else:
-        pq_size = size      # <- WHAT use?
-        pq_slots= slots     # <- WHAT use?
 
-        status = 0                # success
+    status = 0
+    # Update registry dictionary
+    reg["pq_size"]  = newSize
+    reg["pq_slots"] = newSlots
 
     return status
 
 
-def saveTimePar(newTimeOffset, newMaxLatency):
-
+# Save new timeOffset and max-latency values to registry
+def saveTimePar(re, env, newTimeOffset, newMaxLatency):
+    
     status = 1                     # failure default
 
-    regutil_cmd = f"regutil -u {newTimeOffset} regpath" + "{TIME_OFFSET}"
-    if os.system(regutil_cmd):
-        errmsg("saveTimePar(): Couldn't save new time-offset")
+    ldmhome     = env["ldmhome"]
+    regHandler  = RegistryParser(ldmhome)
     
-    else:
-        regutil_cmd = f"regutil -u {newMaxLatency} regpath" + "{MAX_LATENCY}"
-        if os.system(regutil_cmd):
-            errmsg("saveTimePar(): Couldn't save new maximum acceptable latency")
+    timeOffset  = reg["server_time_offset"]
+    maxLatency  = reg["max_latency"]
+    
+    try:
+        regHandler.modifyRegistry(regHandler.DOMTree, "max-latency", newMaxLatency)
+    except Exception as e:
+        print(f"SaveQueueParam(2) failed. Could not save 'max-latency' (={newMaxLatency}) to registry.xml")
+        return status
 
-            print("Restoring previous time-offset\n")
-            regutil_cmd = f"regutil -u {offset} regpath" + "{TIME_OFFSET}"
-            if os.system(regutil_cmd):
-                errmsg("saveTimePar(): Couldn't restore previous time-offset")
-            
-        else:
-            offset = newTimeOffset      # WHY these 2 assigments???
-            max_latency = newMaxLatency # WHY these 2 assigments???
+    try:
+        regHandler.modifyRegistry(regHandler.DOMTree, "time-offset", newTimeOffset)
+    except Exception as e:
+        # Try revert 'size' change
+        try:
+            regHandler.modifyRegistry(regHandler.DOMTree,  "max-latency", maxLatency)
+            print("\nSaveQueueParam(1) failed. Restored previous 'max-latency' element\n")
+        except Exception as ee:
+            print("\nSaveQueueParam(1) failed. Could not restore previous 'max-latency' element\n")
+            return status
 
-            status = 0                # success
+        print("SaveQueueParam(2) failed. Could not save 'time-offset' element to registry, nor restore previous 'max-latency'!")
+        return status
+
+
+    status = 0
+    # Update registry dictionary
+    reg["server_time_offset"]   = newTimeOffset
+    reg["max_latency"]          = newMaxLatency
 
     return status
 
@@ -239,16 +258,12 @@ def computeNewQueueSize(max_latency, minVirtResTime, oldestProductAge, mvrtSize,
 #       -1      The LDM system isn't running.
 #       else    The elapsed time since the LDM server was started, in seconds.
 #
-def getElapsedTimeOfServer(reg, envVar):
+def getElapsedTimeOfServer(envVar):
 
-    if isRunning(reg, envVar, True):
-        pid_file    = envVar["pid_file"] 
-        pid_time = util._getMTime(pid_file)
-        return time.time() - pid_time
+    pid_file    = envVar["pid_file"] 
+    pid_time    = util._getMTime(pid_file)
 
-    print("getElapsedTimeOfServer: LDM is NOT running!...")
-    return -1
-
+    return time.time() - pid_time
 
 
 # Returns
@@ -265,8 +280,14 @@ def vetQueueSize(reg, envVar):
     ip_addr     = reg["ip_addr"]
     max_latency = reg["max_latency"]
 
-    etime       = getElapsedTimeOfServer(reg, envVar)
+    if not isRunning(reg, envVar, True):
+        print("\n\tvetQueueSize(): LDM is NOT running!...")
+        return status
+
+    etime       = getElapsedTimeOfServer(envVar)
+    
     if etime < max_latency:
+        print(f"\tvetQueueSize(): etime: {etime} - max_latency: {max_latency}: Too soon to tell...")
         status = 0                    # too soon to tell
         return status
     
@@ -277,8 +298,6 @@ def vetQueueSize(reg, envVar):
         status = 2
         return status
 
-    #print(f"\n\tpqmon: {pq_line}\n")
-
     isFull          = int(pq_line.split()[0])
     ageOldest       = int(pq_line.split()[7])
     minVirtResTime  = int(pq_line.split()[9])
@@ -287,13 +306,15 @@ def vetQueueSize(reg, envVar):
 
     pqMonElements = [isFull, ageOldest, minVirtResTime, mvrtSize, mvrtSlots, max_latency]
 
-    # debug and print(f"\n\tisFull: {isFull}, ageOldest: {ageOldest}, minVirtResTime: {minVirtResTime}, mvrtSize: {mvrtSize}, mvrtSlots: {mvrtSlots}, max_latency: {max_latency}")
+    #print(f"\n\tisFull: {isFull}, ageOldest: {ageOldest}, minVirtResTime: {minVirtResTime}, mvrtSize: {mvrtSize}, mvrtSlots: {mvrtSlots}, max_latency: {max_latency}")
 
     # A- No reconciliation needed
     ##############################
-    if isFull == 0 or minVirtResTime < 0 or minVirtResTime >= max_latency or mvrtSize <= 0 or mvrtSlots <= 0:
+
+    if not (isFull == 0 or minVirtResTime < 0 or minVirtResTime >= max_latency or mvrtSize <= 0 or mvrtSlots <= 0):
         status = 0
-        print("\n\t\t - No reconciliation needed")
+        print(f"\n\t\t - No reconciliation needed\
+            \n\tisFull: {isFull}, ageOldest: {ageOldest}, minVirtResTime: {minVirtResTime}, mvrtSize: {mvrtSize}, mvrtSlots: {mvrtSlots}, max_latency: {max_latency}")
         return status
 
     # B- Reconciliation needed
@@ -302,24 +323,25 @@ def vetQueueSize(reg, envVar):
 
     reconMode           = reg["reconMode"]
     # print(f'\nINFO: The value of the registry parameter "RECONCILIATION_MODE" is "{reconMode}"\n')
-    error_msg = f"vetQueueSize(): The maximum acceptable latency \
-        \n(registry parameter 'MAX_LATENCY': {max_latency} seconds) is greater \
-        \nthan the observed minimum virtual residence time of \
-        \ndata-products in the queue ({minVirtResTime} seconds).  \
-        \nThis will hinder detection of duplicate data-products."
-    errmsg(error_msg)
+    warning_msg = f"vetQueueSize(): The maximum acceptable latency (registry parameter 'MAX_LATENCY': {max_latency} seconds) is greater \
+        \n\tthan the observed minimum virtual residence time of data-products in the queue ({minVirtResTime} seconds).  \
+        \n\tThis will hinder detection of duplicate data-products.\n"
+    warnmsg(warning_msg)
     
+    reconModMsg = "\tThe value of the 'regpath{RECONCILIATION_MODE}" + f"' registry-parameter is '{reconMode}'\n"
+    print(reconModMsg)
+
     #1.
     if reconMode == "increase queue":
         return util._increaseQueue(reg, envVar, pqMonElements)
     
     #2.
     if reconMode == "decrease maximum latency":
-        return util._decreaseQueue(reg, envVar)
+        return util._decreaseMaxLatency(reg, envVar)
 
     #3.
     if reconMode == "do nothing":
-        return util._doNothing(pqMonElements)
+        return doNothing(pqMonElements)
 
     #4.
     errmsg(f"Unknown reconciliation mode: '{reconMode}'")
@@ -327,6 +349,27 @@ def vetQueueSize(reg, envVar):
     return status
 
 
+
+def doNothing(pqMonValues):
+
+    ageOldest       = pqMonValues[1] 
+    minVirtResTime  = pqMonValues[2] 
+    mvrtSize        = pqMonValues[3] 
+    mvrtSlots       = pqMonValues[4] 
+    maxLatency      = pqMonValues[5] 
+
+    newByteCount, newSlotCount = computeNewQueueSize(maxLatency, minVirtResTime, ageOldest, mvrtSize, mvrtSlots)
+    
+    error_msg = f"vetQueueSize(): The queue should be {newByteCount} bytes in size with {newSlotCount} slots or the \
+        \n\tmaximum-latency parameter should be decreased to {minVirtResTime} seconds. \
+        \n\tYou should set registry-parameter 'regpath" + "{RECONCILIATION_MODE}" + " \
+        \n\tto 'increase queue' or 'decrease max latency' or manually adjust the relevant registry parameters \
+        \n\tand recreate the queue."
+    errmsg(error_msg)
+
+    status = 1        # small queue or big max-latency
+    
+    return status
 
 ###############################################################################
 # check if the LDM is running.  return 0 if running, -1 if not.
@@ -380,6 +423,7 @@ def check_insertion(reg):
 
     pq_path     = reg["pq_path"]
     status, pq  = util._executePqMon(pq_path)
+
     if status == -11:
         errmsg("\tcheck_insertion(): pqmon(1) failure")
         return status
@@ -393,37 +437,174 @@ def check_insertion(reg):
         warnmsg(f'The last data-product was inserted {age} seconds ago, \
                 \n\t\t which is greater than the registry - parameter "INSERTION_CHECK_INTERVAL" value (={check_period})')
         status = -1
+    else:
+        print(f"\n\tcheck_insertion(): age ({age}) is lower than the insertion_check_period ({check_period}) as set in the registry.\n")
+
 
     return status
 
 
 ###############################################################################
 # rotate the specified log file, keeping 'numlog' files
-# may apply to eith ldmd log or metrics log
+# may apply to either ldm log or metrics log
 ###############################################################################
 
-def newLog(reg, env):
-
-    status      = 1      # default failure
+def newLog(reg, envVar):
 
     logFile     = reg['log_file']
     numLogs     = reg['num_logs']
 
+    # different may be set on CLI
+    if envVar['log_file'] != None:
+        logFile = envVar['log_file']
+
+    if envVar['num_logs'] != None:
+        numLogs = envVar['num_logs']
+    
+    return _newLog(logFile, numLogs)
+
+
+
+def newMetrics(reg):
+
+    metricsFile     = reg['metrics_file']
+    numMetrics      = reg['nums_metrics']
+
+    return _newLog(metricsFile, numMetrics)
+
+def _newLog(targetFile, num):
+
+    status      = 1      # default failure
+
     # Rotate the log file
 
-    newlog_cmd = f"newlog {logFile} {numLogs}"
+    newlog_cmd = f"newlog {targetFile} {num}"
     status = os.system(newlog_cmd)
+    
 
     if status != 0:
-        errmsg("new_log(): log rotation failed")
+        errmsg("new_log(): file rotation failed")
     else:
         # Refresh logging: is a refresh ok for metrics log too??
         refresh_logging_cmd = f"refresh_logging"
         status = os.system(refresh_logging_cmd)
+    
         if status != 0:
             errmsg("new_log(): Couldn't refresh LDM logging")
     
     return status
+
+            
+#
+# print metrics to file
+def printMetrics(reg, flag):
+
+    metricsFilePath = reg['metrics_file']
+    port            = reg["port"]
+    pq_path         = reg["pq_path"]
+
+    pq_line         = list(util.getPq(pq_path))
+    portCount       = list(util.getPortCount(reg, port))
+    load            = list(util.getLoad())
+    thisTime        = float(util.getTime())
+    cpu             = list(util.getCpu(reg))
+    
+    all_metrics     =  load + portCount + pq_line + cpu 
+    all_metrics.insert(0, thisTime)
+    all_metrics     = f"{util._listToString(all_metrics)}\n"
+    
+    time_legend     = "\ttime: \t\tYYYYmmdd.hhmmss"
+    load_legend     = "\tuptime (avg at): 1 mn, 5 mn, 15 mn"
+    port_legend     = "\tport (count): \tremote, local"
+    pq_legend       = "\tpq: \t\tage, prodCount, byteCount"
+    cpu_legend      = "\tCPU: \t\tuserTime, sysTime, idleTime, waitTime, memUsed, memFree, swapUsed, swapFree, contextSwitches"
+
+    all_legend      = "\n   time  \t|     uptime     | port |            pq          |   CPU "
+
+    if flag:
+        # print to file
+        with open(metricsFilePath, "a") as metricsHandle:
+            metricsHandle.write(all_metrics)
+
+    else:
+        print(all_legend) 
+        print(all_metrics)
+        # print the legend to the metricsFilePath
+        print(f"\nLegend:\n{time_legend}\n{load_legend}\n{port_legend}\n{pq_legend}\n{cpu_legend}\n")
+
+
+def addMetrics(reg):
+
+    # print metrics to file named in registry
+    status = printMetrics(reg, True)
+        
+    return status
+
+
+#
+# Command for plotting metrics: TO TEST!!!!!!!!!!!!!!!!!!!!!!!!!
+def plotMetrics(reg, envVar):
+
+    begin           = envVar['begin']
+    end             = envVar['end']
+    metrics_files   = reg['metrics_files']
+    
+    plot_cmd = f"plotMetrics -b {begin} -e {end} {metrics_files}"
+    
+    return os.system(plot_cmd)
+
+
+
+# ###############################################################################
+# # HUP the pqact program(s)
+# ###############################################################################
+
+def pqactHUP(envVar):
+
+    status = 0
+    cmd=""
+    ps_cmd, default = util._whichPs(envVar)
+
+    ps_output   = subprocess.check_output(ps_cmd, shell=True).decode()
+
+    ps_lineList = ps_output.split('\n')
+
+    pid_index = default
+    pqact_pid = -1
+    pqact_pids = ""
+
+    # search for the position (pid_index) of PID
+    for ps_line in ps_lineList:
+        if 'PPID' in ps_line:
+            ps_line_items = ps_line.split()
+            try:
+                pid_index = ps_line_items.index("PID") 
+                
+            except:
+                errmsg(f"PID position not found in ps output: {ps_line}. Weird!")
+    
+        else:
+            if 'pqact' in ps_line:
+                pqact_line_item = ps_line.split()
+                try:
+                    pqact_pid = pqact_line_item[pid_index] 
+                    pqact_pids += f" {pqact_pid}"
+                    
+                except:
+                    errmsg(f"pqact position not found in ps output: {ps_line}. Weird!")
+                
+    if pqact_pids == "":
+        errmsg("ldmadmin_pqactHUP: process not found, cannot HUP pqact\n")
+        return status
+    
+    print("Check pqact HUP with command \"ldmadmin tail\"\n")
+    kill_cmd = f"kill -HUP {pqact_pids}"
+    
+    status = os.system( kill_cmd )
+
+    return status
+
+
 
 
 ###############################################################################
@@ -626,15 +807,15 @@ def del_pq(reg, envVar):
         errmsg("deleteQueue(): The LDM is running, cannot delete the queue")
     else:
         if status == 3:
-            errmsg(f"deleteQueue(): Couldn't delete {queueName}-queue:  '{queuePath}'")
+            errmsg(f"deleteQueue(): Couldn't delete '{queueName}-queue':  '{queuePath}'")
         else:
             if status == 2:
                 print(f"\n\tproduct-queue '{pqueuePath}' doesn't exist...");
             else:
                 if status == 0:
-                    print(f"\n\tproduct queue {pqueuePath} deleted.")
+                    print(f"\n\tproduct queue: '{pqueuePath}' deleted.")
                 else:
-                    print(f"\n\tproduct queue {pqueuePath} NOT deleted.")
+                    print(f"\n\tproduct queue '{pqueuePath}' NOT deleted.")
 
 ###############################################################################
 # Deletes a surf-queue
@@ -655,7 +836,7 @@ def del_surf_pq(reg, envVar):
                 print(f"\n\tsurf-queue '{surfqueuePath}' doesn't exist...");
             else:
                 if status == 0:
-                    print(f" surf queue {surfqueuePath} deleted.")
+                    print(f"\n\tsurf queue {surfqueuePath} deleted!")
                 else:
                     print(f" surf queue {surfqueuePath} NOT deleted.")
 
@@ -683,17 +864,24 @@ def callQueueCreate(q_size, q_slots, clobber, verbose, debug, fast, q_path):
     
     # Build the command line
     q_cmd = f"pqcreate {debug_opt} {verbose_opt} {fast_opt} {clobber_opt} -S {q_slots}  -q {q_path} -s {q_size} "
-    
+    #print(q_cmd)
+
     if fast and not diskOk:
         errmsg(f"mkqueue(1): there is NOT enough space to make a queue of size {q_size}. ")
         return status
+
+    if util._doesFileExist(q_path):
+        errmsg(f"queueCreate failed. File {q_path} already exists!.")
+        return status
     
     # execute pqcreate(1)
-    if os.system(q_cmd):
-        errmsg("queueCreate failed")
+    status = os.system(q_cmd)
+    if status:
+        errmsg(f"queueCreate: failed ({q_path} not created!)")
         return status
     
     status = 0
+    print(f"\n\tqueue: '{q_path}' created!\n")
 
     return status
 
@@ -711,8 +899,9 @@ def make_pq(reg, envVar):
     verbose     = envVar['verbose']     # Boolean
     pq_clobber  = envVar['clobber']     # Boolean
     pq_fast     = envVar['fast']        # Boolean
-    pq_path     = envVar['pq_path']     # This CAN change from registry
-
+    pq_path     = envVar['q_path']     # This CAN change from registry
+    
+    
     return callQueueCreate(pq_size, pq_slots, pq_clobber, verbose, debug, pq_fast, pq_path)
 
 
@@ -722,16 +911,17 @@ def make_pq(reg, envVar):
 
 def make_surf_pq(reg, envVar):
 
+
     # need the number of slots to create
     sq_size     = reg['surf_size']          # This does not change from registry
-    sq_slots= int(sq_size / 1000000 * 6881)
+    sq_slots    = int(sq_size / 1000000 * 6881)
 
     debug       = envVar['debug']       # Boolean
     verbose     = envVar['verbose']     # Boolean
     sq_clobber  = envVar['clobber']     # Boolean
     sq_fast     = envVar['fast']        # Boolean
-    sq_path     = envVar['sq_path']     # This CAN change from registry
-
+    sq_path     = envVar['q_path']     # This CAN change from registry
+    
     return callQueueCreate(sq_size, sq_slots, sq_clobber, verbose, debug, sq_fast, sq_path)
 
 
@@ -766,7 +956,7 @@ def start(reg, envVar):
     if offset == None:
         offset = reg["server_time_offset"]
 
-    pq_path     = envVar["pq_path"]
+    pq_path     = envVar["q_path"]
     if pq_path == None:
         pq_path = reg["pq_path"]
 
@@ -1267,7 +1457,7 @@ def clean(reg, env):
     return status
 
 
-def updateGemPakTables():
+def updateGempakTables():
 
     return os.system("updateGempakTables")
     
@@ -1293,16 +1483,29 @@ def areQueuesOk(reg):
     return arePOk and areSOk
 
 
+def errmsg(msg):
+    print(f"\n\tERROR: {msg}")
+
+def  warnmsg(msg):
+    print(f"\n\tWARNING: {msg}")
+
+
+
+###############################################################################
+#                                       main()
+###############################################################################
+
+
 if __name__ == "__main__":
 
     os.system('clear')
 
-    ldmhome = "/home/miles/projects/ldm"
-    regHandler = RegistryParser(ldmhome)
-    envHandler = LDMenvironmentHandler()
+    ldmhome         = "/home/miles/projects/ldm"
+    regHandler      = RegistryParser(ldmhome)
+    envHandler      = LDMenvironmentHandler()
 
-    registryDict = regHandler.getRegistryEntries()
-    envVarDict = envHandler.getEnvVarsDict()
+    registryDict    = regHandler.getRegistryEntries()
+    envVarDict      = envHandler.getEnvVarsDict()
     
     # print the current ldm configuration
     # ldmConfig(registryDict, envVarDict)
