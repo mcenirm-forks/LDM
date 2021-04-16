@@ -170,7 +170,7 @@ def saveQueuePar(reg, env, size, slots):
 
 
 # Save new timeOffset and max-latency values to registry
-def saveTimePar(re, env, newTimeOffset, newMaxLatency):
+def saveTimePar(reg, env, newTimeOffset, newMaxLatency):
     
     status = 1                     # failure default
 
@@ -183,7 +183,7 @@ def saveTimePar(re, env, newTimeOffset, newMaxLatency):
     try:
         regHandler.modifyRegistry(regHandler.DOMTree, "max-latency", newMaxLatency)
     except Exception as e:
-        print(f"SaveQueueParam(2) failed. Could not save 'max-latency' (={newMaxLatency}) to registry.xml")
+        print(f"saveTimePar() failed. Could not save 'max-latency' (={newMaxLatency}) to registry.xml")
         return status
 
     try:
@@ -192,12 +192,12 @@ def saveTimePar(re, env, newTimeOffset, newMaxLatency):
         # Try revert 'size' change
         try:
             regHandler.modifyRegistry(regHandler.DOMTree,  "max-latency", maxLatency)
-            print("\nSaveQueueParam(1) failed. Restored previous 'max-latency' element\n")
+            print("\nsaveTimePar() failed. Restored previous 'max-latency' element\n")
         except Exception as ee:
-            print("\nSaveQueueParam(1) failed. Could not restore previous 'max-latency' element\n")
+            print("\nsaveTimePar() failed. Could not restore previous 'max-latency' element\n")
             return status
 
-        print("SaveQueueParam(2) failed. Could not save 'time-offset' element to registry, nor restore previous 'max-latency'!")
+        print("saveTimePar() failed. Could not save 'time-offset' element to registry, nor restore previous 'max-latency'!")
         return status
 
 
@@ -281,16 +281,17 @@ def vetQueueSize(reg, envVar):
     max_latency = reg["max_latency"]
 
     if not isRunning(reg, envVar, True):
-        print("\n\tvetQueueSize(): LDM is NOT running!...")
+        print("\n\tvetQueueSize(): LDMserver is NOT running!...(Please start it and try again.)")
         return status
 
     etime       = getElapsedTimeOfServer(envVar)
     
-    if etime < max_latency:
-        print(f"\tvetQueueSize(): etime: {etime} - max_latency: {max_latency}: Too soon to tell...")
-        status = 0                    # too soon to tell
-        return status
-    
+    if False:
+        if etime < max_latency:
+            print(f"\n\tvetQueueSize(): etime: {etime} - max_latency: {max_latency}: Too soon to tell...")
+            status = 0                    # too soon to tell
+            return status
+        
     pq_path = reg["pq_path"]
     status, pq_line = util._executePqMon(pq_path)
     if status == -1:
@@ -333,11 +334,11 @@ def vetQueueSize(reg, envVar):
 
     #1.
     if reconMode == "increase queue":
-        return util._increaseQueue(reg, envVar, pqMonElements)
+        return increaseQueue(reg, envVar, pqMonElements)
     
     #2.
     if reconMode == "decrease maximum latency":
-        return util._decreaseMaxLatency(reg, envVar)
+        return decreaseMaxLatency(reg, envVar, pqMonElements)
 
     #3.
     if reconMode == "do nothing":
@@ -371,6 +372,136 @@ def doNothing(pqMonValues):
     
     return status
 
+
+
+
+def increaseQueue(reg, envVar, pqMonValues):
+
+    status          = 0            # success
+    restartNeeded   = 0
+
+    ageOldest       = pqMonValues[1] 
+    minVirtResTime  = pqMonValues[2] 
+    mvrtSize        = pqMonValues[3] 
+    mvrtSlots       = pqMonValues[4] 
+    maxLatency      = pqMonValues[5] 
+
+    newByteCount, newSlotCount = computeNewQueueSize(maxLatency, minVirtResTime, ageOldest, mvrtSize, mvrtSlots)
+    
+    pq_path      = reg["pq_path"]
+    newQueuePath = f"{pq_path}.new"
+
+    if newByteCount <= 0 or newSlotCount <= 0:
+        print(f"\n\t- Cannot increase the capacity of the queue with these values: {newByteCount} bytes and {newSlotCount} slots...")
+        status = 1
+        return status
+    
+    print(f"\n\t- Attempting to increase the capacity of the queue to {newByteCount} bytes and {newSlotCount} slots...")
+
+    pqcreate_cmd = f"pqcreate -c -S {newSlotCount} -s {newByteCount} -q {newQueuePath}"
+    #print(f"\n\t\t{pqcreate_cmd}")
+
+    if os.system(pqcreate_cmd):
+        errmsg(f"vetQueueSize(): Couldn't increase queue: {newQueuePath}")
+        status = 2            # major failure
+        return status
+    
+    #print(f"\n\t\tCreated new QUEUE: {newQueuePath}")
+
+
+    if isRunning(reg, envVar, True): 
+        if stop_ldm(): 
+            status = 2        # major failure
+            return status
+    
+        restartNeeded = 1
+    
+    # success so far
+    # LDM is stopped
+    print("vetQueueSize(): Grow  the queue...\n")
+    if grow(pq_path, newQueuePath): 
+        status = 2        # major failure
+        return status
+    
+    print("vetQueueSize(): Save new queue parameters: (size, slots)\n")
+    if saveQueuePar(reg, envVar, newByteCount, newSlotCount):
+        status = 2    # major failure
+        return status
+        
+    
+    # success so far
+    # restart needed
+    if restartNeeded: 
+        print("vetQueueSize(): Restarting the LDM server...\n")
+        if start_ldm(reg, envVar):
+            errmsg("vetQueueSize(): Could not restart LDM server")
+            status = 2    # major failure
+            return status
+        
+    # reset queue metrics
+    # mode is increase queue
+    os.system("pqutil -C")  
+    return status
+
+
+
+def decreaseMaxLatency(reg, envVar, pqMonValues):
+    
+    status = 0
+
+    ageOldest       = pqMonValues[1] 
+    minVirtResTime  = pqMonValues[2] 
+    mvrtSize        = pqMonValues[3] 
+    mvrtSlots       = pqMonValues[4] 
+    maxLatency      = pqMonValues[5] 
+
+    if 0 >= minVirtResTime:
+        # Use age of oldest product, instead
+        minVirtResTime = ageOldest
+    
+    # if 0 >= ageOldest then minVirtResTime = 1
+    if 0 >= ageOldest:
+        minVirtResTime = 1 
+    
+    newMaxLatency = minVirtResTime
+    newTimeOffset = newMaxLatency
+
+    print(f"\tvetQueueSize(): Decreasing the maximum acceptable latency and the time-offset of requests" +
+        "\n\t\t\t(registry parameters 'regpath{MAX_LATENCY}' and 'regpath{TIME_OFFSET}')" + 
+        f"\n\t\t\tto {newTimeOffset} seconds...")
+
+
+    print("\n\tSaving new time parameters to the registry...\n")
+    if saveTimePar(reg, envVar, newTimeOffset, newMaxLatency):
+        status = 2    # major failure
+        return status
+    
+
+    # new time parameters saved
+    if not isRunning(reg, envVar, True):
+        status = 0    # success : LDM is not running
+    
+    else: # LDM is running
+    
+        print("Stopping the LDM...\n")
+        if stop_ldm(reg, envVar):
+            errmsg("vetQueueSize(): Could not stop LDM server")
+            status = 2        # major failure
+            return status
+        
+        # LDM stopped
+        if start_ldm(reg, envVar):
+            errmsg("vetQueueSize(): Could not start LDM server")
+            status = 2    # major failure
+            return status
+        
+        status = 0     # success    
+
+    # reset queue metrics
+    status = os.system("pqutil -C")     # <-- not tested
+    return status
+
+
 ###############################################################################
 # check if the LDM is running.  return 0 if running, -1 if not.
 ###############################################################################
@@ -388,7 +519,7 @@ def isRunning(reg, envir, ldmpingFlag):
 
         running                 = True
         envir['ldmd_running']   = True
-        print("\n\t\t LDM server is running...\n")
+        #print("\n\t\t LDM server is running...\n")
         return running
 
     # The following test is incompatible with the use of a proxy
@@ -632,7 +763,7 @@ def checkLdm(reg, envVar):
 
     status   = 0
 
-    print("\n\tcheckLdm(): 1. Checking for a running LDM system...\n")
+    print("\n\tcheckLdm(): 1. Checking for a running LDM server...\n")
     if not isRunning(reg, envVar, True):
         print("\t\t -> The LDM server is not running")
         status = 2
@@ -804,7 +935,7 @@ def del_pq(reg, envVar):
     status = deleteAQueue(reg, envVar, pqueuePath, "product")
 
     if status == 1:
-        errmsg("deleteQueue(): The LDM is running, cannot delete the queue")
+        errmsg("deleteQueue(): The LDM server is running, cannot delete the queue")
     else:
         if status == 3:
             errmsg(f"deleteQueue(): Couldn't delete '{queueName}-queue':  '{queuePath}'")
@@ -827,7 +958,7 @@ def del_surf_pq(reg, envVar):
     status = deleteAQueue(reg, envVar, surfqueuePath , "surf")
 
     if status == 1:
-        errmsg("deleteQueue(): The LDM is running, cannot delete the queue")
+        errmsg("deleteQueue(): The LDM server is running, cannot delete the queue")
     else:
         if status == 3:
             errmsg(f"deleteQueue(): Couldn't delete surf-queue:  '{surfqueuePath}'")
@@ -957,11 +1088,11 @@ def start(reg, envVar):
         offset = reg["server_time_offset"]
 
     pq_path     = envVar["q_path"]
-    if pq_path == None:
+    if pq_path == None  or pq_path == "":
         pq_path = reg["pq_path"]
 
     # Build the 'ldmd' command line
-    ldmd_cmd = f"ldmd -I {ip_addr} -P {port} {max_clients_opt} {max_latency_opt} -o {offset} -q {pq_path}"
+    ldmd_cmd = f"ldmd -I {ip_addr} -P {port} {max_clients_opt} {max_latency_opt} -o {offset} -q {pq_path} "
 
     #print(    ldmd_cmd   )
     if debug:
@@ -974,7 +1105,7 @@ def start(reg, envVar):
     # Check the ldm(1) configuration-file
     print(f"start: 3. Checking LDM configuration-file ({ldmd_conf})...\n")            
 
-    ldmd_cmd2 = f"{ldmd_cmd} -nvl- {ldmd_conf} 2>&1 1>/dev/null "
+    ldmd_cmd2 = f"{ldmd_cmd} -nvl- {ldmd_conf} 2>/dev/null "
 
     output = os.system(ldmd_cmd2) >> 8
     # print(f"\noutput: {output}\n")   # : 0 means no problem
@@ -985,21 +1116,23 @@ def start(reg, envVar):
     else:
         print("\nstart: 4. Starting the LDM server...\n")
         
-        ldmd_cmd += f" > {pid_file}"
-        # debug and print(ldmd_cmd)
-        status = os.system(ldmd_cmd)
+        ldmd_cmd += f" > {pid_file} 2>/dev/null"
 
-        if not util.isLdmdProcRunning(envVar):
-            util.kill_ldmd_proc(env)
-            errmsg(" >> start: 4.1. Could not start LDM server")
-            status = 1
+        status = os.system(ldmd_cmd)
         
+        if not util.isLdmdProcRunning(envVar):
+            util.kill_ldmd_proc(envVar)
+            errmsg(" >> start: 4.1. Could not start LDM server")
+            print(f"\tFailed commad: {ldmd_cmd}\n")
+            status = 1
+            return status
+
         else:
             # Check to make sure the LDM is running
             while not isRunning(reg, envVar, True) :
                 time.sleep(1)
 
-        print("\nstart(): 5. Started!\n")            
+        print("\nstart: 5. Started!\n")            
 
     return status
 
@@ -1011,7 +1144,7 @@ def start_ldm(reg, envVar):
     line_prefix = ""
 
     # Make sure there is no other server running
-    print("\nstart: 1. Checking for running LDM\n")
+    print("\nstart: 1. Checking for running LDM server\n")
     if isRunning(reg, envVar, True):
         print("start: 2. There is another server running... (start aborted) \n")
         status = 1    
@@ -1022,7 +1155,7 @@ def start_ldm(reg, envVar):
     # Check the queues
     print("start: 2. Checking queues\n")
     if not areQueuesOk(reg):
-        errmsg("LDM not started!")
+        errmsg("Queues are not correct. LDM server not started!")
         status = 1
         return status
     
@@ -1103,12 +1236,12 @@ def stop_ldm(reg, envVar):
 
     # we may need to sleep to make sure that the port is deregistered
     while isRunning(reg, envVar, True): 
-        print(f"\t - LDM is still running... Sleep 1 sec.")
+        print(f"\t - LDM server is still running... Sleep 1 sec.")
         time.sleep(1)
 
     #if not isLdmdProcRunning(envVar):
 
-    print("\t - LDM has stopped running... ")
+    print("\t - LDM server has stopped running... ")
 
     # Remove the pid file if still there    
     pid_filePath = Path(pid_file)
@@ -1276,9 +1409,9 @@ def getQueueStatus(queue_path, name):       # name e.g. "surf"
 def queueCheck(reg, env):
     
     statusOk = False
-    print(f"\n\tqueueCheck(): LDM status check")
+    print(f"\n\tqueueCheck(): LDM server status check")
     if isRunning(reg, env, True):     
-        errmsg("queuecheck(): The LDM system is running! ('queuecheck' aborted)")
+        errmsg("queuecheck(): The LDM server is running! ('queuecheck' aborted)")
     
     else:
 
@@ -1440,7 +1573,7 @@ def clean(reg, env):
 
     status = 0
     if isRunning(reg, env, True):
-        print("\n\tThe LDM system is running!  Stop it first.")
+        print("\n\tThe LDM server is running!  Stop it first.")
         status = 1
         return status
     
@@ -1481,6 +1614,85 @@ def areQueuesOk(reg):
         print("\n\t- ... the surf-queue check FAILED.")
 
     return arePOk and areSOk
+
+######################################################################
+#   show the settings information on users environment
+######################################################################
+
+def showSettings(reg, env):
+
+    setuidEnabledPrograms = [
+                "hupsyslog", 
+                "ldmd", 
+                "noaaportIngester", 
+                "dvbs_multicast"
+                ]
+
+    LDMHOME         = env["ldmhome"]
+    LDMHOME         = "/home/miles/projects/ldm"  # <-- remove in prod
+    LDMHOME_bin     = f"{LDMHOME}/bin"
+
+    print(  f"\t1- LDMHOME: {LDMHOME}")
+
+    print(f"\n\t2- Setuid programs verification:")
+
+
+    for file in setuidEnabledPrograms:
+        try:
+            ll_cmd      = f"ls -la {LDMHOME_bin} | grep {file}"
+            output      = subprocess.check_output(ll_cmd, shell=True).decode()
+            setuidOutput= output.split('\n')[0]
+            print(f"\t{setuidOutput}")
+        except:
+            continue
+
+    print(f"\n\t3- $LDMHOME listing:")
+    ls_cmd          = f"ls -la {LDMHOME} "
+    lsHomeOutput    = subprocess.check_output(ls_cmd, shell=True).decode()
+    print(f"\t{lsHomeOutput}")
+
+    print(f"\n\t4- $LDMHOME/bin listing:")   
+    lsBin_cmd       = f"ls -la {LDMHOME_bin} "
+    lsHomeBinOutput = subprocess.check_output(lsBin_cmd, shell=True).decode()
+    print(f"\t{lsHomeBinOutput}")
+
+    print(f"\n\t5- ldmadmin config:")   
+    ldmConfig(reg, env)
+
+    print(f"\n\t6- mount: $mount | grep `df $LDMHOME/bin`")
+    mount_cmd       = "mount | grep `df $LDMHOME/bin | awk 'NR==2{print $1}'`"
+    mountOutput     = subprocess.check_output(mount_cmd, shell=True).decode()
+    print(f"\n\t{mountOutput}")
+
+
+    # 7- SE (RedHat) status (sestatus)")   
+    # Only if applicable:
+    try:
+        sestatus_cmd    = "sestatus 2>/dev/null"
+        sestatusOutput  = subprocess.check_output(sestatus_cmd, shell=True).decode()
+
+        print(f"\n\t7- SE (RedHat) status (sestatus):\n")   
+        for item in sestatusOutput.split('\n'):
+            print(f"\t{item}")
+        
+    except:
+
+        print("")
+
+# echo -e "\n$ sestatus"
+# which sestatus
+# # if output starts with "which: no sestatus" ---> not Linux SELINUX.
+
+# output=`sestatus`
+
+# # Split output on '\n' and display lines
+# echo $output
+# echo $?
+
+
+# echo -e "\n\n"
+
+
 
 
 def errmsg(msg):
@@ -1546,4 +1758,3 @@ if __name__ == "__main__":
     # LDM start : TO-DO / DONE?
     #start_ldm(registryDict, envVarDict)
     #stop_ldm(registryDict, envVarDict)
-    

@@ -133,7 +133,8 @@ class LDMCommandsHandler:
 	        "addmetrics":			"sub.addMetrics(reg)",		# checked: OK
 	        "plotmetrics":			"sub.plotMetrics(reg, env)", 	# checked: OK
 	        "newmetrics":			"sub.newMetrics(reg)",			# checked: OK
-	        "updategempaktables": 	"sub.updateGempakTables()"	# checked: OK
+	        "updategempaktables": 	"sub.updateGempakTables()",	# checked: OK
+	        "showsettings":			"sub.showSettings(reg, env)",	# checked: OK
     	}
 
 		pingFlag = True

@@ -61,6 +61,7 @@ class CLIParser:
         "plotmetrics":			["[-b begin] [-e end]",				"Plots LDM metrics"],
         "newmetrics":			["",		                        "Rotates the metrics files"],
         "updategempaktables":	["",		                        "Updates the GEMPAK tables"],
+        "showsettings":         ["",                                "Shows the current users settings"],
         "usage":				["",		                        "Prints the usage message"]
         
     }
