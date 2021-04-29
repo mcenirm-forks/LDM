@@ -13,7 +13,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - run: sudo apt install -y libxml2-dev libpng12-dev zlib1g-dev libcunit1-dev doxygen
+    - run: sudo apt-get install -y libxml2-dev libpng-dev zlib1g-dev libcunit1-dev doxygen
+    - run: sudo apt-get install -y autoconf autoconf-archive automake libtool bison flex
     - run: mkdir m4
     - run: autoreconf -fi
     - run: ./configure --disable-root-actions --with-noaaport
