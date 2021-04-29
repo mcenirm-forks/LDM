@@ -13,11 +13,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - name: configure
-      run: ./configure
-    - name: make
-      run: make
-    - name: make check
-      run: make check
-    - name: make distcheck
-      run: make distcheck
+    - run: sudo apt install -y libxml2-dev libpng12-dev zlib1g-dev libcunit1-dev doxygen
+    - run: mkdir m4
+    - run: autoreconf -fi
+    - run: ./configure --disable-root-actions --with-noaaport
+    - run: make
+    - run: make check
+    - run: make distcheck
